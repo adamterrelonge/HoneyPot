@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+/* Design tokens — keep in sync with build.md §4 and src/render/theme.ts */
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", system-ui, sans-serif;
+  --color-ink: #1d1d1f;
+  --color-ink-2: #6e6e73;
+  --color-ink-3: #86868b;
+  --color-canvas: #fbfbfd;
+  --color-page: #f5f5f7;
+  --color-accent: #0071e3;
+  --color-ok: #34c759;
+  --color-warn: #ff9f0a;
+  --color-bad: #ff3b30;
+  --color-pwned: #af52de;
+  --color-hairline: rgb(0 0 0 / 0.08);
+}
+
+@utility glass {
+  background: rgb(255 255 255 / 0.72);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 0.5px solid rgb(0 0 0 / 0.1);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: radial-gradient(1200px 800px at 60% 40%, #ffffff 0%, var(--color-canvas) 55%, var(--color-page) 100%);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

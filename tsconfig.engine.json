@@ -1,0 +1,19 @@
+{
+  "//": "Purity guard (build.md §2.1): the engine must compile WITHOUT the DOM lib or any UI package.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/engine/**/*.ts"],
+  "exclude": ["src/engine/**/*.test.ts"]
+}

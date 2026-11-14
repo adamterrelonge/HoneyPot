@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "name": "Harbour & Finch Accountants",
+    "industry": "Professional services",
+    "size": "sme",
+    "employees": 24,
+    "seed": 1337
+  },
+  "zones": [
+    { "id": "z-internet", "name": "Internet", "kind": "internet", "origin": { "x": 0, "y": 0 }, "size": { "w": 5, "h": 15 } },
+    { "id": "z-edge", "name": "Edge & DMZ", "kind": "edge", "origin": { "x": 6, "y": 0 }, "size": { "w": 5, "h": 15 } },
+    { "id": "z-server", "name": "Server Room", "kind": "server", "origin": { "x": 12, "y": 0 }, "size": { "w": 7, "h": 7 } },
+    { "id": "z-office", "name": "Office Floor", "kind": "office", "origin": { "x": 12, "y": 8 }, "size": { "w": 11, "h": 7 } }
+  ],
+  "nodes": [
+    { "id": "internet", "kind": "internet", "label": "Internet", "zoneId": "z-internet", "pos": { "x": 2, "y": 7 } },
+    { "id": "saas", "kind": "cloud", "label": "Cloud Email & Docs", "zoneId": "z-internet", "pos": { "x": 2, "y": 3 }, "services": ["email", "docs"] },
+    { "id": "cloud-backup", "kind": "cloud", "label": "Offsite Backup", "zoneId": "z-internet", "pos": { "x": 2, "y": 11 }, "services": ["backup"] },
+
+    { "id": "isp-router", "kind": "isp", "label": "ISP Router", "zoneId": "z-edge", "pos": { "x": 7, "y": 7 }, "ip": "203.0.113.10", "firmware": { "vendor": "Northgate", "version": "Hub 4.1.2" }, "tags": ["provider-managed"] },
+    { "id": "fw-edge", "kind": "firewall", "label": "Edge Firewall", "zoneId": "z-edge", "pos": { "x": 9, "y": 7 }, "ip": "10.0.0.1", "firmware": { "vendor": "Kestrel", "version": "KestrelOS 7.2.4" }, "services": ["nat", "firewall"], "tags": ["critical"] },
+    { "id": "web-dmz", "kind": "server", "label": "Client Portal", "zoneId": "z-edge", "pos": { "x": 9, "y": 3 }, "ip": "172.16.10.10", "vlan": 10, "os": "Ubuntu 22.04 LTS", "services": ["https"], "tags": ["internet-facing"] },
+    { "id": "vpn-gw", "kind": "vpn", "label": "VPN Gateway", "zoneId": "z-edge", "pos": { "x": 9, "y": 11 }, "ip": "172.16.10.20", "vlan": 10, "firmware": { "vendor": "Kestrel", "version": "SecureLink 3.0.9" }, "services": ["ipsec"], "tags": ["internet-facing"] },
+
+    { "id": "sw-core", "kind": "switch", "label": "Core Switch", "zoneId": "z-server", "pos": { "x": 13, "y": 5 }, "ip": "10.0.0.2", "firmware": { "vendor": "Halden", "version": "NetOS 15.2(7)" }, "tags": ["critical"] },
+    { "id": "dc-01", "kind": "server", "label": "Domain Controller", "zoneId": "z-server", "pos": { "x": 14, "y": 2 }, "ip": "10.0.20.10", "vlan": 20, "os": "Windows Server 2019", "services": ["directory", "dns", "dhcp"], "tags": ["critical"] },
+    { "id": "file-01", "kind": "server", "label": "File Server", "zoneId": "z-server", "pos": { "x": 16, "y": 2 }, "ip": "10.0.20.11", "vlan": 20, "os": "Windows Server 2019", "services": ["smb"] },
+    { "id": "db-01", "kind": "database", "label": "Practice Database", "zoneId": "z-server", "pos": { "x": 18, "y": 2 }, "ip": "10.0.20.12", "vlan": 20, "os": "Windows Server 2016", "services": ["sql"], "tags": ["critical", "client-data"] },
+    { "id": "nas-01", "kind": "nas", "label": "Backup NAS", "zoneId": "z-server", "pos": { "x": 17, "y": 5 }, "ip": "10.0.20.20", "vlan": 20, "firmware": { "vendor": "Strata", "version": "DSM 7.1" }, "services": ["backup"] },
+
+    { "id": "sw-floor", "kind": "switch", "label": "Floor Switch", "zoneId": "z-office", "pos": { "x": 13, "y": 9 }, "ip": "10.0.0.3", "firmware": { "vendor": "Halden", "version": "NetOS 15.2(7)" } },
+    { "id": "ap-01", "kind": "wifi", "label": "Wi-Fi Access Point", "zoneId": "z-office", "pos": { "x": 13, "y": 12 }, "ip": "10.0.0.4", "firmware": { "vendor": "Arcadia", "version": "WaveOS 6.4.1" } },
+    { "id": "pc-reception", "kind": "desktop", "label": "Reception PC", "zoneId": "z-office", "pos": { "x": 16, "y": 9 }, "ip": "10.0.30.21", "vlan": 30, "os": "Windows 11 23H2" },
+    { "id": "pc-accounts-1", "kind": "desktop", "label": "Accounts PC 1", "zoneId": "z-office", "pos": { "x": 18, "y": 9 }, "ip": "10.0.30.22", "vlan": 30, "os": "Windows 11 23H2" },
+    { "id": "pc-accounts-2", "kind": "desktop", "label": "Accounts PC 2", "zoneId": "z-office", "pos": { "x": 20, "y": 9 }, "ip": "10.0.30.23", "vlan": 30, "os": "Windows 10 22H2", "tags": ["end-of-life-os"] },
+    { "id": "printer-01", "kind": "printer", "label": "Office Printer", "zoneId": "z-office", "pos": { "x": 22, "y": 9 }, "ip": "10.0.30.50", "vlan": 30, "firmware": { "vendor": "Lumen", "version": "PrintOS 2.3.0" }, "services": ["print"] },
+    { "id": "lt-partner", "kind": "laptop", "label": "Partner Laptop", "zoneId": "z-office", "pos": { "x": 16, "y": 12 }, "ip": "10.0.40.31", "vlan": 40, "os": "macOS 14", "tags": ["privileged"] },
+    { "id": "lt-accountant", "kind": "laptop", "label": "Accountant Laptop", "zoneId": "z-office", "pos": { "x": 18, "y": 12 }, "ip": "10.0.40.32", "vlan": 40, "os": "Windows 11 23H2" },
+    { "id": "lt-junior", "kind": "laptop", "label": "Junior Laptop", "zoneId": "z-office", "pos": { "x": 20, "y": 12 }, "ip": "10.0.40.33", "vlan": 40, "os": "Windows 11 23H2" },
+    { "id": "phones", "kind": "phone", "label": "Staff Mobiles", "zoneId": "z-office", "pos": { "x": 15, "y": 14 }, "ip": "10.0.40.100", "vlan": 40, "tags": ["byod"] },
+    { "id": "voip-01", "kind": "voip", "label": "Desk Phones", "zoneId": "z-office", "pos": { "x": 22, "y": 12 }, "ip": "10.0.50.10", "vlan": 50, "services": ["sip"] },
+    { "id": "cctv-01", "kind": "camera", "label": "CCTV Camera", "zoneId": "z-office", "pos": { "x": 21, "y": 14 }, "ip": "10.0.60.10", "vlan": 60, "firmware": { "vendor": "Optica", "version": "CamOS 1.8.2" }, "tags": ["default-credentials"] }
+  ],
+  "links": [
+    { "id": "l-saas-internet", "a": "saas", "b": "internet", "medium": "wan", "bandwidthMbps": 10000, "latencyMs": 12 },
+    { "id": "l-backup-internet", "a": "cloud-backup", "b": "internet", "medium": "wan", "bandwidthMbps": 10000, "latencyMs": 18 },
+    { "id": "l-internet-isp", "a": "internet", "b": "isp-router", "medium": "wan", "bandwidthMbps": 500, "latencyMs": 8 },
+    { "id": "l-isp-fw", "a": "isp-router", "b": "fw-edge", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.5 },
+    { "id": "l-fw-web", "a": "fw-edge", "b": "web-dmz", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.3 },
+    { "id": "l-fw-vpn", "a": "fw-edge", "b": "vpn-gw", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.3 },
+    { "id": "l-fw-core", "a": "fw-edge", "b": "sw-core", "medium": "fiber", "bandwidthMbps": 10000, "latencyMs": 0.2 },
+    { "id": "l-core-dc", "a": "sw-core", "b": "dc-01", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-core-file", "a": "sw-core", "b": "file-01", "medium": "fiber", "bandwidthMbps": 10000, "latencyMs": 0.2 },
+    { "id": "l-core-db", "a": "sw-core", "b": "db-01", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-core-nas", "a": "sw-core", "b": "nas-01", "medium": "fiber", "bandwidthMbps": 10000, "latencyMs": 0.2 },
+    { "id": "l-core-floor", "a": "sw-core", "b": "sw-floor", "medium": "fiber", "bandwidthMbps": 10000, "latencyMs": 0.2 },
+    { "id": "l-floor-ap", "a": "sw-floor", "b": "ap-01", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-floor-reception", "a": "sw-floor", "b": "pc-reception", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-floor-accounts-1", "a": "sw-floor", "b": "pc-accounts-1", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-floor-accounts-2", "a": "sw-floor", "b": "pc-accounts-2", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-floor-printer", "a": "sw-floor", "b": "printer-01", "medium": "copper", "bandwidthMbps": 100, "latencyMs": 0.3 },
+    { "id": "l-floor-voip", "a": "sw-floor", "b": "voip-01", "medium": "copper", "bandwidthMbps": 100, "latencyMs": 0.3 },
+    { "id": "l-floor-cctv", "a": "sw-floor", "b": "cctv-01", "medium": "copper", "bandwidthMbps": 100, "latencyMs": 0.3 },
+    { "id": "l-ap-partner", "a": "ap-01", "b": "lt-partner", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
+    { "id": "l-ap-accountant", "a": "ap-01", "b": "lt-accountant", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
+    { "id": "l-ap-junior", "a": "ap-01", "b": "lt-junior", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
+    { "id": "l-ap-phones", "a": "ap-01", "b": "phones", "medium": "wifi", "bandwidthMbps": 300, "latencyMs": 5 }
+  ]
+}
