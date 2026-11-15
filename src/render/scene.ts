@@ -22,7 +22,7 @@ import {
 import type { NetNode, Topology } from "../engine/model";
 import type { Speed } from "../engine/sim/clock";
 import { APP_INFO } from "../engine/sim/demands";
-import type { FlowState, Snapshot } from "../engine/sim/types";
+import type { FlowState, Snapshot, TraceResult } from "../engine/sim/types";
 import { TILE_W, boundsOf, depth, project, rectCorners, tileCentre, type Pt } from "./geometry";
 import { cumulative, pointAlong, routeLinks, type LinkRoute } from "./routing";
 import {
@@ -112,6 +112,8 @@ export class NetworkScene {
   private linkDashG = new SmoothGraphics();
   private linkDownG = new SmoothGraphics();
   private linkHiG = new SmoothGraphics();
+  private traceG = new SmoothGraphics();
+  private traceResult: TraceResult | null = null;
   private particles = new ParticleContainer({ dynamicProperties: { position: true, color: true } });
   private nodeLayer = new Container({ sortableChildren: true });
   private labelLayer = new Container();
@@ -164,7 +166,7 @@ export class NetworkScene {
       if (this.dead) return;
 
       this.world.addChild(
-        this.gridG, this.floorG, this.zoneLabels, this.linkG, this.linkDashG, this.linkDownG, this.linkHiG,
+        this.gridG, this.floorG, this.zoneLabels, this.linkG, this.linkDashG, this.linkDownG, this.linkHiG, this.traceG,
         this.particles, this.nodeLayer, this.labelLayer, this.zoneTagLayer,
       );
       this.app.stage.addChild(this.world);
@@ -217,6 +219,12 @@ export class NetworkScene {
   stats(): { nodes: number; links: number; streams: number; particles: number } {
     const particles = this.streams.reduce((s, x) => s + x.count, 0);
     return { nodes: this.views.size, links: this.routes.size, streams: this.streams.length, particles: Math.min(particles, MAX_PARTICLES) };
+  }
+
+  /** Trace tool: highlight the traced path (green up to the break, red at it, grey after). */
+  setTrace(result: TraceResult | null): void {
+    this.traceResult = result;
+    this.refreshFocus();
   }
 
   setClock(speed: Speed, running: boolean): void {
@@ -612,7 +620,7 @@ export class NetworkScene {
     let i = 0;
     for (const s of this.streams) {
       s.phase = (s.phase + (dt * v) / Math.max(1, s.length)) % 1;
-      const lit = !sel || s.flow.path!.nodes.includes(sel);
+      const lit = !this.traceResult && (!sel || s.flow.path!.nodes.includes(sel));
       const alpha = lit ? 0.95 : 0.12;
       for (let k = 0; k < s.count && i < this.pool.length; k++, i++) {
         const p = this.pool[i]!;
@@ -647,9 +655,37 @@ export class NetworkScene {
     };
     if (this.hovered && this.hovered !== this.selected) draw(this.hovered, 0.5);
     if (this.selected) draw(this.selected, 1);
-    const dim = this.selected !== null;
+    this.drawTrace();
+    const dim = this.selected !== null || this.traceResult !== null;
     this.linkG.alpha = dim ? 0.45 : 1;
     this.linkDashG.alpha = dim ? 0.45 : 1;
+  }
+
+  private drawTrace(): void {
+    const g = this.traceG.clear();
+    const t = this.traceResult;
+    if (!t) return;
+    this.related.add(t.from).add(t.to);
+    if (!t.path) return;
+    for (const id of t.path.nodes) this.related.add(id);
+    // Colour each link by whether the trace got past it.
+    let state: "ok" | "bad" | "after" = "ok";
+    t.path.links.forEach((linkId, i) => {
+      if (t.failed?.type === "node" && t.path!.nodes[i] === t.failed.id) state = "after";
+      if (t.failed?.type === "link" && t.failed.id === linkId) state = "bad";
+      const r = this.routes.get(linkId);
+      if (r) {
+        for (const piece of r.pieces) {
+          g.moveTo(piece[0]!.x, piece[0]!.y);
+          for (let k = 1; k < piece.length; k++) g.lineTo(piece[k]!.x, piece[k]!.y);
+        }
+        // Works: green. Broken at a link/device: blue up to the break, red at it. Blocked by policy: all red.
+        const okColor = t.ok ? STATUS_COLORS.online : t.failed ? COLORS.accent : STATUS_COLORS.offline;
+        const color = state === "ok" ? okColor : state === "bad" ? STATUS_COLORS.offline : COLORS.link;
+        g.stroke({ width: state === "after" ? 1.5 : 3, color, alpha: state === "after" ? 0.5 : 0.95, cap: "round", join: "round" });
+      }
+      if (state === "bad") state = "after";
+    });
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -744,7 +780,7 @@ export class NetworkScene {
     for (const [id, v] of this.views) {
       const isSel = id === this.selected;
       const isHover = id === this.hovered;
-      const lit = !this.selected || isSel || this.related.has(id);
+      const lit = (!this.selected && !this.traceResult) || isSel || this.related.has(id);
 
       v.lift += ((isSel || isHover ? -6 : 0) - v.lift) * ease;
       v.body.y = v.lift;

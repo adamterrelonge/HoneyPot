@@ -193,3 +193,29 @@ export function deriveDemands(t: Topology): Demand[] {
 
   return out;
 }
+
+/** What an app needs before it works (mirrors the demands above; used by the trace tool). */
+export function needsFor(app: string): Need[] {
+  if (app === "email-docs" || app === "files" || app === "practice-db" || app === "remote") return WORK_NEEDS;
+  if (app === "web" || app === "print" || app === "payments" || app === "backup-offsite") return ["dns"];
+  return [];
+}
+
+/** The service you'd most likely use a destination for (trace default). */
+export function serviceOfHost(n: NetNode): string {
+  if (n.kind === "internet") return "web";
+  const map: [string, string][] = [
+    ["sql", "practice-db"], ["smb", "files"], ["files", "files"], ["email", "email-docs"], ["https", "portal"],
+    ["print", "print"], ["payments", "payments"], ["scada", "production"], ["pacs", "imaging"],
+    ["directory", "directory"], ["dns", "dns"], ["nvr", "cctv"], ["backup", "backup-local"], ["sip", "voice"],
+  ];
+  return map.find(([s]) => n.services.includes(s))?.[1] ?? "any";
+}
+
+/** Label for an app id or a dependency id ("dns", "directory", "any"). */
+export function serviceLabel(service: string, t: Topology): string {
+  if (service === "dns") return "DNS";
+  if (service === "directory") return "Sign-in";
+  if (service === "any") return "Any service";
+  return service in APP_INFO ? appLabel(service as AppId, t) : service;
+}

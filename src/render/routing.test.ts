@@ -67,18 +67,19 @@ describe("floor routing", () => {
       }
       return out;
     });
+    // Collect violations and assert once: an expect() per sample pair is slow under parallel test load.
+    const tooClose: string[] = [];
     for (let i = 0; i < samples.length; i++) {
       for (let j = i + 1; j < samples.length; j++) {
         for (const a of samples[i]!) {
           for (const b of samples[j]!) {
-            const parallel = Math.abs(a.t.x * b.t.x + a.t.y * b.t.y) > 0.98;
-            if (!parallel) continue;
-            const d = Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y);
-            expect(d, `${all[i]!.id} vs ${all[j]!.id}`).toBeGreaterThan(LANE_PX * 0.6);
+            if (Math.abs(a.t.x * b.t.x + a.t.y * b.t.y) <= 0.98) continue; // not parallel
+            if (Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) <= LANE_PX * 0.6) tooClose.push(`${all[i]!.id} vs ${all[j]!.id}`);
           }
         }
       }
     }
+    expect([...new Set(tooClose)]).toEqual([]);
   });
 
   it("leaves a gap wherever two cables would cross", () => {

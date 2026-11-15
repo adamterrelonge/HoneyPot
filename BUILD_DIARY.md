@@ -323,3 +323,111 @@ inbound policy. Then add Inspector actions (disable access, change permissions, 
    then shows hop-by-hop with ✓/✗ and the exact rule, link or permission responsible, highlighted on the map.
    Good?
 4. **Groups and actions:** keep actions group-wide in Phase 4, or add "split one device out of a group" now?
+
+---
+
+## Phase 4 — Policy, identity & the trace tool · 2026-11-15 · ✅ complete
+
+### 1. Summary
+- **Decisions confirmed by you:** zone-to-zone firewall rules are detailed enough; roles with MFA and per-app
+  permissions; click-a-source, click-a-destination trace; actions stay group-wide.
+- **Model:**
+  - `policy.rules` (ordered; selectors `any`, `kind:`, `zone:`, `node:`, `tag:`; services per app or `dns` /
+    `directory`).
+  - `identity.roles` (MFA plus per-app none/read/write) and `node.role`.
+  - The schema validates selectors and that referenced zones and devices exist.
+- **Engine (`engine/policy/policy.ts`, pure):** `decide()` (same zone not filtered → first matching enabled rule
+  → default policy), selector matching, roles, and human descriptions of selectors.
+- **Simulation:**
+  - Firewall checks on every flow leg and on the DNS and sign-in lookups.
+  - Role permission checks.
+  - A per-rule "blocking N users" count in the snapshot.
+  - Eight new commands (add, update, move and remove rule; disable access; set role; set access; set MFA),
+    all replayable.
+  - `trace()`, which explains device → DNS → sign-in → permission → firewall → every hop, marking the first ✗ and
+    the would-be path beyond it.
+- **Generator:** writes a default policy from the compliance choices (guest isolation, PCI card data environment,
+  clinical and OT fencing). It assigns roles (finance → manager, partners and clinicians → privileged, an IT admin
+  laptop → IT admin) and sets MFA coverage by budget.
+- **UI:**
+  - "Trace" and "Policy" buttons in the top bar.
+  - Trace panel: from/to slots, swap, service picker (automatic by default), verdict banner, and a ✓/✗ step
+    list. Steps can be clicked to jump to a device or open the rule or role. It refreshes every second.
+  - Map highlighting for the traced path.
+  - Policy sheet with a **Firewall rules** tab (reorder, enable/disable, delete, live "blocking N users", add-rule
+    form with zone, zone-type, tag and server pickers, placed at top or bottom) and an **Access & MFA** tab (role ×
+    app matrix, MFA switches, user counts).
+  - Inspector: **Disable / Restore access**, **Trace from here**, **Edit firewall rules** (on firewalls) and a
+    **Role** picker (group-wide).
+
+### 2. Tests run
+| Check | Command | Result |
+|---|---|---|
+| Typecheck (app + engine) | `npm run typecheck` | ✅ 0 errors |
+| Unit tests | `npm test` | ✅ **93 / 93** passed (6 files, ~7.6 s) |
+| Build | `npm run build` | ✅ ~1.1 s |
+| Property tests with default policies | 500 invariants + 100 healthy mornings (now with generated rules and roles) | ✅ no app down; no app degraded for standard/generous budgets, so default rules never block legitimate traffic |
+| Visual: PCI trace | Retail · Mid → Trace from card terminals to the domain controller | ✅ ✗ at "Blocked by rule “Card data environment: nothing else out”", with zone crossing shown and the path drawn red |
+| Visual: policy sheet | Policy → Firewall rules | ✅ 7 generated rules (guest ×3, PCI ×4), toggles, reordering |
+| Visual: add a rule | Form: deny Office zones → Server Room zones · Stock & ERP, at top | ✅ inserted at #1; "blocking 24 users"; Stock & ERP degraded; two events logged |
+| Visual: access matrix | Access & MFA tab | ✅ roles with user counts, MFA switches, per-app selects |
+| Visual: disable access then trace | Sample → Accounts PC 1 → Disable access → Trace from here → File Server | ✅ "Why" lists each blocked app with the rule; trace fails at the DNS step naming the rule; path red; 0 console errors |
+
+New tests (19): rule evaluation (same zone, first match, services, disabled rules, zone/node/tag selectors,
+default inbound deny); schema rejects bad selectors and dangling references; disable and restore access with the
+blocking count; rule ordering via add, move and disable; DNS blocked at the firewall names the rule; invalid rule
+commands rejected; role access none → denied, role change → restored; MFA flag; generated PCI and guest policies via
+trace; role and MFA defaults by budget; trace for working, broken-link, rule-blocked and inbound-denied cases;
+deterministic replay including policy and identity commands.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| A rule-blocked trace drew the path blue (looked like success) | Path colour only handled link failures | Policy blocks draw red throughout; link breaks draw blue → red → grey |
+| The trace verdict repeated the rule name twice | Title and detail both carried the reason | Title "Blocked by rule “X”", detail is the zone crossing |
+| Traffic particles crowded the traced path | Particles only dimmed for a selection | Particles dim whenever a trace is shown |
+| Generated businesses had nobody in the IT admin role | No IT staff in the templates | One IT admin laptop at HQ (three for enterprise), tagged `admin`, role `it-admin` |
+| UI copy mentioned "Phase 6" | Build jargon leaked into the product | Reworded |
+| Stress timing test failed only in the full run (6.7 ms > 5 ms) | Wall-clock budget too tight while other test files run in parallel (1.2 s alone) | Budget set to 10 ms against the real 15.6 ms/tick need at 16×, with the reason in the test |
+| Routing "lanes apart" test timed out only in the full run | Hundreds of thousands of `expect()` calls under parallel load | Collect violations, assert once |
+| A replacement left a stray closing brace in `simulation.ts`; bash quoting broke template literals twice | My scripted edits | Fixed with direct edits; no more inline `node -e` for JSX/template code |
+| Editing engine files made the dev page reload to the wizard mid-check | Worker module changes force a full reload under HMR | Expected in dev; visual scripts now recreate their business first |
+
+### 4. Known limitations / debt
+- The firewall is one logical policy evaluated end to end (not per interface), stateless, and service-based
+  rather than port-based. Recorded in §7.
+- Rules can't express "except"; use an allow above a deny.
+- The trace follows the current best path only (no alternative paths) and ignores `via` waypoints (remote access is
+  traced to the gateway and onward separately).
+- MFA has no effect yet. It becomes meaningful with credential-theft scenarios in Phase 6.
+- Group-wide actions only, as decided: disabling one laptop out of 40 isn't possible.
+- The policy sheet doesn't support editing an existing rule's fields in place (toggle, move and delete work; edit
+  means delete and re-add).
+- Each new rule from the UI gets a time-based id. That's fine for replay (the id travels in the command) but not
+  human-friendly.
+- Bundle size is unchanged in kind (~810 kB); Phase 8 will code-split.
+
+### 5. Ideas for later
+- "Explain this flow" in Live traffic: one click opens the trace for that app.
+- Rule hit counters for allows too ("allowing 120 users"), plus a "shadowed rule" warning when a rule can never
+  match because one above it catches everything.
+- Policy templates ("lock down IoT", "segment guests") as one-click fixes, which pair well with Phase 6 scoring.
+- A risk view: highlight devices whose role has write access to client data and no MFA.
+- Saved traces as monitors: "alert me if Reception can't reach the file server".
+
+### 6. Hand-off for Phase 5 — Device lifecycle & firmware
+**Start at:** `build.md` §8 Phase 5. Add `src/engine/firmware/` with a seeded catalogue (vendor → versions with
+release date, stability, advisories and EOL), install and rollback commands with downtime and outcome rolls,
+hardware ageing, and a vulnerability-exposure view. Firmware strings are already on every device.
+
+**Decisions needed from you:**
+1. **Advisories:** use fictional advisories (e.g. "KSA-2026-014: remote code execution, critical") against the
+   fictional vendors, rather than real CVE numbers. That keeps it vendor-neutral and safe. OK?
+2. **Install outcomes:** proposed defaults per update: downtime 5–20 min (reboot); 2–8% chance the config doesn't
+   migrate (device comes up degraded until rolled back); 0.5–2% chance of a brick on lean budgets (device dead until
+   replaced, 4 h); rollback always possible unless bricked. Accept or adjust?
+3. **When updates run:** allow "install now" and "schedule for tonight" (a maintenance window, e.g. 22:00)?
+   Scheduling makes the "don't patch the firewall at 10am" lesson possible.
+4. **Hardware ageing and random failures:** turn on by default (a seeded, rare chance of disk, PSU or switch
+   failure, higher for old kit and lean budgets), or keep a calm mode with no random failures unless a scenario
+   asks for them?

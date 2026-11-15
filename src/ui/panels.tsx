@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MEDIUM_LABELS, NODE_CATALOG, formatBandwidth } from "../engine/catalog";
 import { neighbours } from "../engine/graph";
-import type { NetNode, NodeStatus } from "../engine/model";
+import { ROLES, type NetNode, type NodeStatus, type Role } from "../engine/model";
+import { ROLE_INFO } from "../engine/policy/policy";
+import { blockRuleId } from "../engine/sim/commands";
 import { appLabel } from "../engine/sim/demands";
 import type { NodeSim } from "../engine/sim/types";
 import { emojiUrl } from "../render/theme";
@@ -201,6 +203,7 @@ export function Inspector({ width }: { width: number }) {
             )}
 
             <Actions node={node} live={live} />
+            <AccessActions node={node} />
             <LiveTraffic nodeId={node.id} />
 
             <Section title={`Connections (${links.length})`}>
@@ -275,6 +278,58 @@ function Actions({ node, live }: { node: NetNode; live: NodeSim | undefined }) {
         {isolated ? "Reconnect" : "Isolate"}
       </button>
     </div>
+  );
+}
+
+/** Phase 4 actions: disable access, trace, firewall rules and the device's role. */
+function AccessActions({ node }: { node: NetNode }) {
+  const blocked = useSim((s) => !!s.snap?.policy.rules.some((r) => r.id === blockRuleId(node.id)));
+  const role = useSim((s) => s.snap?.identity.nodeRoles[node.id]);
+  const startTrace = useApp((s) => s.startTrace);
+  const setPolicyOpen = useApp((s) => s.setPolicyOpen);
+  const btn =
+    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)]";
+  return (
+    <>
+      <div className="mb-3 flex gap-2">
+        {!EXTERNAL_KINDS.has(node.kind) && (
+          <button
+            className={`${btn} ${blocked ? "bg-accent text-white hover:bg-[#0077ed]" : "bg-white/80 text-[#c93400] hover:bg-white"}`}
+            onClick={() => void sim.dispatch({ type: "node.setAccess", nodeId: node.id, blocked: !blocked })}
+            title={blocked ? "Remove the deny rule for this device" : "Add a deny-everything firewall rule for this device"}
+          >
+            {blocked ? "Restore access" : "Disable access"}
+          </button>
+        )}
+        <button className={`${btn} bg-white/80 text-ink hover:bg-white`} onClick={() => startTrace(node.id)}>
+          Trace from here
+        </button>
+      </div>
+      {node.kind === "firewall" && (
+        <button
+          className={`${btn} mb-3 w-full bg-white/80 text-ink hover:bg-white`}
+          onClick={() => setPolicyOpen("rules")}
+        >
+          Edit firewall rules
+        </button>
+      )}
+      {role && (
+        <label className="mb-3 flex items-center justify-between gap-3 rounded-[12px] bg-white/70 px-3 py-2 text-[13px] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+          <span className="text-ink-2">Role{node.count > 1 ? ` (all ${node.count.toLocaleString()})` : ""}</span>
+          <select
+            value={role}
+            onChange={(e) => void sim.dispatch({ type: "node.setRole", nodeId: node.id, role: e.target.value as Role })}
+            className="h-7 rounded-[7px] bg-black/[0.05] px-1.5 text-[12px] outline-none"
+          >
+            {ROLES.map((r) => (
+              <option key={r} value={r}>
+                {ROLE_INFO[r].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+    </>
   );
 }
 

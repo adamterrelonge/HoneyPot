@@ -8,7 +8,7 @@ import { parseTopology } from "../engine/model";
 import { TICK_HZ, type Speed } from "../engine/sim/clock";
 import type { CommandResult } from "../engine/sim/commands";
 import { Simulation } from "../engine/sim/simulation";
-import type { Snapshot } from "../engine/sim/types";
+import type { Snapshot, TraceResult } from "../engine/sim/types";
 
 const LOOP_MS = 25;
 const PUSH_MS = 100;
@@ -40,6 +40,11 @@ export class SimHost {
     const res = this.sim.dispatch(cmd);
     this.push(true);
     return res;
+  }
+
+  /** Trace tool: explain whether service traffic from one device to another works right now. */
+  trace(from: string, to: string, service?: string): TraceResult | null {
+    return this.sim?.trace(from, to, service) ?? null;
   }
 
   setSpeed(speed: Speed): void {

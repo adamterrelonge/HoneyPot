@@ -2,7 +2,7 @@
  * Simulation types shared by the engine, the worker and the UI (build.md §6, Phase 2).
  * Everything here is plain data so snapshots can cross the worker boundary by structured clone.
  */
-import type { NodeStatus } from "../model";
+import type { NodeStatus, Role, RoleDef, Rule } from "../model";
 
 /** User-facing business applications. Each demand belongs to exactly one. */
 export const APP_IDS = [
@@ -121,5 +121,34 @@ export interface Snapshot {
   apps: AppHealth[];
   /** Most recent events, oldest first (bounded). */
   events: SimEvent[];
+  /** Current firewall rules (in order) and how many users each is blocking right now. */
+  policy: { rules: Rule[]; blocking: Record<string, number> };
+  /** Current role definitions and every person-device's role. */
+  identity: { roles: Record<Role, RoleDef>; nodeRoles: Record<string, Role> };
   hash: string;
+}
+
+// ── Trace tool (Phase 4) ────────────────────────────────────────────────────
+
+export interface TraceStep {
+  kind: "endpoint" | "dependency" | "permission" | "hop" | "policy";
+  /** true = passed, false = the reason it fails, null = not reached. */
+  ok: boolean | null;
+  title: string;
+  detail?: string;
+  ref?: { type: "node" | "link" | "rule" | "role"; id: string };
+}
+
+export interface TraceResult {
+  from: string;
+  to: string;
+  service: string;
+  serviceLabel: string;
+  ok: boolean;
+  verdict: string;
+  steps: TraceStep[];
+  /** Path walked (live, or the would-be path when broken). */
+  path: FlowPath | null;
+  /** Element on the path that breaks it, for highlighting. */
+  failed?: { type: "node" | "link"; id: string };
 }

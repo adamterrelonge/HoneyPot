@@ -7,8 +7,8 @@
 import { proxy, wrap, type Remote } from "comlink";
 import { create } from "zustand";
 import type { Speed } from "../engine/sim/clock";
-import type { Command, CommandResult } from "../engine/sim/commands";
-import type { Snapshot } from "../engine/sim/types";
+import type { CommandInput, CommandResult } from "../engine/sim/commands";
+import type { Snapshot, TraceResult } from "../engine/sim/types";
 import type { SimHost } from "../worker/sim.worker";
 
 interface SimState {
@@ -45,11 +45,15 @@ export const sim = {
     void host.setRunning(useSim.getState().running);
   },
 
-  async dispatch(cmd: Command): Promise<CommandResult> {
+  async dispatch(cmd: CommandInput): Promise<CommandResult> {
     if (!host) return { ok: false, error: "Simulation not started" };
     const res = await host.dispatch(cmd);
     useSim.setState({ error: res.ok ? null : res.error });
     return res;
+  },
+
+  async trace(from: string, to: string, service?: string): Promise<TraceResult | null> {
+    return host ? host.trace(from, to, service) : null;
   },
 
   setRunning(running: boolean): void {

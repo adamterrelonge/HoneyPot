@@ -98,6 +98,11 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
   rounded corners, run in parallel lanes 7px apart, and leave a small gap where one cable crosses
   another (see §5 "Link routing"). Selection turns them accent blue. Downed links are dashed red,
   blocked links (isolated endpoint) faint dashed grey, and busy links turn orange (≥80%) or red (≥100%).
+- **Trace** highlights the traced path with a bold 3px line:
+  - Green: the whole path works.
+  - Broken at a link or device: blue up to the break, red at the break, grey after it.
+  - Blocked by policy: red throughout.
+  Everything off the path dims, including traffic particles.
 - **Groups** (one node standing for many identical devices) draw as a stacked icon with a dark count
   pill. Zoomed in (≥105%) the stack fans out into a small crowd. Zoomed out (<55%) device labels fade
   and each zone shows a screen-aligned tag with its name and device count, but only when the zone is
@@ -127,10 +132,11 @@ src/
   engine/        pure TS: model (schema), catalog, graph, stress (synthetic topology)
     sim/         rng, clock, commands, demands, simulation, types   (policy/, incidents/ later)
     gen/         spec (BusinessSpec + wizard metadata), generate (templates → TopologyInput)
+    policy/      policy.ts: rule matching, decisions, roles (pure)
   worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
   render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
   state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade)
-  ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx
+  ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -245,8 +251,56 @@ What each choice changes in `generateBusiness`:
 - **Layout:** columns Internet | Edge | HQ zones | branch zones, each wrapping at 34 tiles. Devices sit on
   alternate tiles inside a zone, so cables always have corridors.
 
-**Planned additions:** Phase 4 `Subnet`, `Vlan`,
-`FirewallRule`, `Identity`, `Group`, `Permission`. Phase 5 `FirmwareRelease`, `Vulnerability`.
+**Phase 4 additions** (`model.ts`, `engine/policy`):
+```ts
+Topology.policy   { rules: Rule[] }      // ordered, first match wins
+Rule              { id, name, from: Selector, to: Selector, services: (AppId|"dns"|"directory"|"any")[],
+                    action: allow|deny, enabled }
+Selector          = "any" | "kind:<zone kind>" | "zone:<zone id>" | "node:<device id>" | "tag:<device tag>"
+Topology.identity { roles: Partial<Record<Role, { mfa, access: Record<app, none|read|write> }>> }
+Role              = staff | manager | privileged | it-admin      NetNode.role? (default: privileged tag → privileged, else staff)
+Commands          policy.addRule{rule,index?} | policy.updateRule{ruleId,patch} | policy.moveRule{ruleId,index}
+                  | policy.removeRule{ruleId} | node.setAccess{nodeId,blocked} | node.setRole{nodeId,role}
+                  | identity.setAccess{role,app,access} | identity.setMfa{role,enabled}
+Snapshot.policy   { rules, blocking: Record<ruleId, users> }   Snapshot.identity { roles, nodeRoles }
+TraceResult       { from, to, service, ok, verdict, steps: TraceStep[], path, failed? }
+```
+**Evaluation**, once per flow leg, from the source device's zone to the destination's:
+- Same zone: not filtered.
+- Otherwise the first enabled rule matching from, to and service decides.
+- With no match, the default policy applies: internet/cloud → private zone is denied, everything else is allowed.
+- DNS and sign-in lookups are filtered too (service `dns`/`directory`). Each lookup uses the first reachable
+  host that the firewall permits.
+
+**Identity:** apps that need sign-in (email & docs, files, business system, remote) are denied when the user's
+role has `none` access. MFA is recorded per role now and will be used by attack scenarios (Phase 6).
+
+**Disable access** adds the rule `block-<id>` (deny device → anywhere, any service) at #1. Restore removes it.
+All actions apply to whole groups.
+
+**Generator default policy:**
+- Guest devices (`tag:guest`): DNS, then web to the internet, then deny everything else.
+- PCI DSS: the secure zone may use DNS, then reach the payment provider, then deny out; deny everything in.
+- Health data: allow branch imaging → archive; deny office/branch → clinical.
+- ISO 27001: deny office/branch → factory.
+- No compliance: no rules (a flat network).
+
+**Roles:**
+- Finance devices are managers; partners and clinicians are privileged; one IT admin laptop per HQ (three for
+  enterprise) is it-admin.
+- Business-system access: staff read, others write.
+- MFA: lean = IT admins; standard = IT admins + privileged; generous = everyone.
+
+**Trace** (`Simulation.trace(from, to, service?)`; the service is inferred from the destination when omitted).
+Steps run in order:
+1. Both devices usable.
+2. DNS and sign-in (via whichever host, and whether the firewall allows it).
+3. Role permission.
+4. Firewall decision between the zones.
+5. Each hop with medium, latency and utilisation, or the would-be path with the first broken link or device.
+After the first ✗, later steps show as not reached.
+
+**Planned additions:** Phase 5 `FirmwareRelease`, `Vulnerability`.
 Phase 6 `Incident`, `Scenario`, `Objective`.
 
 ---
@@ -258,7 +312,9 @@ Phase 6 `Incident`, `Scenario`, `Objective`.
 | Traffic | flows per service pair: demand Mbps, utilisation, latency, loss. Bulk/ack split 85/15 per direction; full-duplex links; oversubscribed links scale flows proportionally (no max-min fairness); queueing delay 2u/(1−u) ms capped at 150, 150–250 ms when full; "loss" = undelivered share | packets, TCP behaviour, MTU, Wi-Fi airtime sharing |
 | Routing | shortest path (latency + 0.05 per hop); only forwarding kinds (internet, isp, router, firewall, switch, wifi) carry transit; paths recomputed only after a command | routing protocols, ECMP, asymmetric routes |
 | Dependencies | DNS → sign-in → app, checked as reachability to **any** host offering the service | caching, DHCP leases, Kerberos tickets |
-| Edge / NAT | stateful-edge rule: once a path has crossed the internet it may not enter a private zone (anything but internet/edge/cloud). Inbound only via a VPN gateway (`via`) or a tunnel | firewall rule sets (Phase 4) |
+| Edge / NAT | stateful-edge rule: once a path has crossed the internet it may not enter a private zone (anything but internet/edge/cloud). Inbound only via a VPN gateway (`via`) or a tunnel | NAT tables, port forwarding |
+| Firewall | one logical policy evaluated end-to-end per flow leg (source zone → destination zone), first match wins, intra-zone unfiltered, stateless "allow means both directions" | per-interface rule sets, stateful connection tracking, ports/protocols (services stand in for them) |
+| Identity | roles with per-app none/read/write and an MFA flag; a group shares one role | individual accounts, groups-in-groups, conditional access |
 | WAN | site-to-site VPN = overlay link whose traffic also loads (and whose health depends on) its underlay chain; private WAN = plain link | tunnel failover across ISPs, IPsec overheads, MTU |
 | Groups | one node = N identical devices: demand × N, users counted N, jitter/bursts ÷ √N; Wi-Fi APs grouped and sized at ~30 clients each | per-device state inside a group (Phase 4+ may split groups) |
 | L2 | VLAN membership, trunk vs access, switch failure | STP, MAC tables, ARP |
@@ -310,11 +366,13 @@ criteria pass and a diary entry exists.
 - **Done when:** generator property tests pass (all invariants hold for 500 random seeds);
   enterprise template renders smoothly.
 
-### Phase 4 — Policy, identity & the trace tool
+### Phase 4 — Policy, identity & the trace tool ✅ (2026-11-15)
 - Subnets/VLANs, ordered firewall rules, users, groups, permissions, MFA.
 - Inspector actions: disable access, change permissions, edit rules, isolate a node.
 - **Trace tool:** pick a source and destination to see the hop-by-hop path and the exact
   rule/link/permission that allows or blocks it.
+- Decisions: zone-to-zone rules (plus `node:`/`tag:` selectors); roles with MFA and per-app access; click-to-click trace;
+  actions stay group-wide.
 - **Done when:** policy evaluation tests (rule ordering, default deny, VLAN isolation) pass and
   the trace explains every block.
 

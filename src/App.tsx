@@ -4,6 +4,7 @@ import { COMPLIANCE_INFO } from "./engine/gen/spec";
 import { bootSimulation, useApp } from "./state/store";
 import { Inspector, Sidebar } from "./ui/panels";
 import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-panels";
+import { PolicySheet, TracePanel } from "./ui/policy-panels";
 import { Wizard } from "./ui/wizard";
 
 const SIDEBAR_W = 280;
@@ -12,6 +13,7 @@ const INSPECTOR_W = 340;
 export function App() {
   const selectedId = useApp((s) => s.selectedId);
   const select = useApp((s) => s.select);
+  const tracing = useApp((s) => s.trace !== null);
 
   const topologyKey = useApp((s) => s.topologyKey);
 
@@ -31,11 +33,13 @@ export function App() {
       <NetworkCanvas key={topologyKey} insets={insets} />
       <TopBar />
       <Sidebar width={SIDEBAR_W} />
-      <ServicesPanel width={INSPECTOR_W} open={!selectedId} />
+      <ServicesPanel width={INSPECTOR_W} open={!selectedId && !tracing} />
       <Inspector width={INSPECTOR_W} />
+      <TracePanel width={INSPECTOR_W} />
       <ZoomControls />
       <ActivityFeed left={SIDEBAR_W + 24} right={72} />
       <ErrorToast />
+      <PolicySheet />
       <Wizard />
     </div>
   );
@@ -44,6 +48,8 @@ export function App() {
 function TopBar() {
   const meta = useApp((s) => s.topology.meta);
   const openWizard = useApp((s) => s.setWizardOpen);
+  const startTrace = useApp((s) => s.startTrace);
+  const setPolicyOpen = useApp((s) => s.setPolicyOpen);
   const profile = meta.profile;
   return (
     <header className="glass pointer-events-auto absolute top-3 left-3 right-3 flex h-12 items-center gap-3 rounded-[14px] px-4">
@@ -70,10 +76,22 @@ function TopBar() {
       >
         New business…
       </button>
+      <button
+        onClick={() => startTrace()}
+        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+      >
+        Trace
+      </button>
+      <button
+        onClick={() => setPolicyOpen("rules")}
+        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+      >
+        Policy
+      </button>
       <div className="ml-auto flex items-center gap-3">
         <SimControls />
         <span className="hidden rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 xl:inline">
-          Phase 3 · Business generator
+          Phase 4 · Policy & trace
         </span>
       </div>
     </header>

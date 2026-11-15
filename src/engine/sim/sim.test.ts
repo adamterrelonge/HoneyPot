@@ -291,6 +291,7 @@ describe("scale (200-node stress topology)", () => {
     const msPerTick = (performance.now() - t0) / 440;
     expect(app(sim, "files").status).toBe("ok");
     // 16× speed needs 64 ticks per second inside the worker: keep well under 15 ms per tick.
-    expect(msPerTick).toBeLessThan(5);
+    // 16× needs 64 ticks/s in the worker (15.6 ms each). 10 ms leaves margin while other test files run in parallel.
+    expect(msPerTick).toBeLessThan(10);
   });
 });

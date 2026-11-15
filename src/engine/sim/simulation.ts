@@ -13,15 +13,20 @@
  *
  * Shortest-path trees are cached and rebuilt only when a command changes the topology.
  */
-import type { Link, NetNode, NodeKind, Topology, ZoneKind } from "../model";
-import { parseCommand, type Command, type CommandResult, type LoggedCommand } from "./commands";
+import type { Link, NetNode, NodeKind, Role, RoleDef, Rule, Topology, Zone, ZoneKind } from "../model";
+import {
+  PERSON_KINDS, ROLE_INFO, accessFor, decide, defaultRole, describeSelector, resolveRoles, type Decision,
+} from "../policy/policy";
+import { blockRuleId, parseCommand, type Command, type CommandResult, type LoggedCommand } from "./commands";
 import { minuteOfTick, windowCurve, workdayCurve } from "./clock";
-import { APP_INFO, appLabel, deriveDemands } from "./demands";
+import { APP_INFO, appLabel, deriveDemands, needsFor, serviceLabel, serviceOfHost } from "./demands";
 import { deriveSeed, fnv1a, noise } from "./rng";
 import type {
   AppHealth, AppId, Demand, FlowPath, FlowState, FlowStatus, LinkSim, Need, NodeSim, Severity,
-  SimEvent, Snapshot,
+  SimEvent, Snapshot, TraceResult, TraceStep,
 } from "./types";
+
+type Resolved = { path: FlowPath; hops: Hop[] } | { reason: string; ruleId?: string };
 
 /** Device kinds that forward other devices' traffic. Endpoints never act as routers. */
 const FORWARDING: ReadonlySet<NodeKind> = new Set(["internet", "isp", "router", "firewall", "switch", "wifi", "vpn"]);
@@ -86,7 +91,14 @@ export class Simulation {
   private trees = new Map<string, Tree>();
   private staticTrees = new Map<string, Tree>();
   /** Per-demand path (physical hops) or failure reason, valid until the next command. */
-  private resolved: ({ path: FlowPath; hops: Hop[] } | { reason: string } | undefined)[] = [];
+  private resolved: (Resolved | undefined)[] = [];
+
+  // Policy & identity (Phase 4): mutable copies, changed only by commands.
+  private rules: Rule[];
+  private roles: Record<Role, RoleDef>;
+  private readonly nodeRole = new Map<string, Role>();
+  private readonly zoneOf = new Map<string, Zone>();
+  private blocking: Record<string, number> = {};
   /** Number of shortest-path trees built (for tests: proves caching works). */
   pathComputations = 0;
 
@@ -108,6 +120,13 @@ export class Simulation {
     this.nodes = new Map(topology.nodes.map((n) => [n.id, n]));
     this.links = new Map(topology.links.map((l) => [l.id, l]));
     const zoneKind = new Map(topology.zones.map((z) => [z.id, z.kind]));
+    const zoneById = new Map(topology.zones.map((z) => [z.id, z]));
+    this.rules = topology.policy.rules.map((r) => ({ ...r, services: [...r.services] }));
+    this.roles = resolveRoles(topology);
+    for (const n of topology.nodes) {
+      this.zoneOf.set(n.id, zoneById.get(n.zoneId)!);
+      if (PERSON_KINDS.has(n.kind)) this.nodeRole.set(n.id, defaultRole(n));
+    }
     for (const n of topology.nodes) {
       this.adj.set(n.id, []);
       this.powered.set(n.id, n.status !== "offline");
@@ -196,6 +215,13 @@ export class Simulation {
       flows: this.flows,
       apps: this.appHealth,
       events: this.events.slice(),
+      policy: { rules: this.rules.map((r) => ({ ...r, services: [...r.services] })), blocking: this.blocking },
+      identity: {
+        roles: Object.fromEntries(
+          Object.entries(this.roles).map(([k, v]) => [k, { mfa: v.mfa, access: { ...v.access } }]),
+        ) as Record<Role, RoleDef>,
+        nodeRoles: Object.fromEntries(this.nodeRole),
+      },
       hash: this.hash(),
     };
   }
@@ -213,6 +239,7 @@ export class Simulation {
     }
     for (const f of this.flows) parts.push(`${f.id}:${f.status}:${f.throughputMbps.toFixed(4)}:${f.latencyMs.toFixed(3)}`);
     parts.push(`e${this.eventSeq}`);
+    parts.push(JSON.stringify(this.rules), JSON.stringify(this.roles), JSON.stringify([...this.nodeRole]));
     return fnv1a(parts.join("|")).toString(16).padStart(8, "0");
   }
 
@@ -269,7 +296,110 @@ export class Simulation {
           text: cmd.isolated ? `${n.label} isolated from the network` : `${n.label} reconnected`,
         };
       }
+
+      // ── Policy ──
+      case "policy.addRule": {
+        const err = this.ruleRefError(cmd.rule.from) ?? this.ruleRefError(cmd.rule.to);
+        if (err) return { ok: false, error: err };
+        if (this.rules.some((r) => r.id === cmd.rule.id)) return { ok: false, error: `A rule with id "${cmd.rule.id}" already exists` };
+        const index = Math.min(cmd.index ?? this.rules.length, this.rules.length);
+        this.rules.splice(index, 0, { ...cmd.rule });
+        return {
+          ok: true, noop: false, subject: cmd.rule.id, severity: cmd.rule.action === "deny" ? "warn" : "info",
+          text: `Firewall rule added at #${index + 1}: “${cmd.rule.name}” (${this.ruleSummary(cmd.rule)})`,
+        };
+      }
+      case "policy.updateRule": {
+        const r = this.rules.find((x) => x.id === cmd.ruleId);
+        if (!r) return { ok: false, error: `Unknown rule "${cmd.ruleId}"` };
+        const err = (cmd.patch.from && this.ruleRefError(cmd.patch.from)) || (cmd.patch.to && this.ruleRefError(cmd.patch.to));
+        if (err) return { ok: false, error: err };
+        const before = JSON.stringify(r);
+        Object.assign(r, cmd.patch);
+        if (JSON.stringify(r) === before) return { ok: true, noop: true };
+        const text =
+          Object.keys(cmd.patch).length === 1 && cmd.patch.enabled !== undefined
+            ? `Firewall rule “${r.name}” ${r.enabled ? "enabled" : "disabled"}`
+            : `Firewall rule “${r.name}” changed (${this.ruleSummary(r)})`;
+        return { ok: true, noop: false, subject: r.id, severity: "info", text };
+      }
+      case "policy.moveRule": {
+        const i = this.rules.findIndex((x) => x.id === cmd.ruleId);
+        if (i < 0) return { ok: false, error: `Unknown rule "${cmd.ruleId}"` };
+        const to = Math.min(cmd.index, this.rules.length - 1);
+        if (to === i) return { ok: true, noop: true };
+        const [r] = this.rules.splice(i, 1);
+        this.rules.splice(to, 0, r!);
+        return { ok: true, noop: false, subject: r!.id, severity: "info", text: `Firewall rule “${r!.name}” moved to #${to + 1}` };
+      }
+      case "policy.removeRule": {
+        const i = this.rules.findIndex((x) => x.id === cmd.ruleId);
+        if (i < 0) return { ok: false, error: `Unknown rule "${cmd.ruleId}"` };
+        const [r] = this.rules.splice(i, 1);
+        return { ok: true, noop: false, subject: r!.id, severity: "info", text: `Firewall rule “${r!.name}” removed` };
+      }
+      case "node.setAccess": {
+        const n = this.nodes.get(cmd.nodeId);
+        if (!n) return { ok: false, error: `Unknown device "${cmd.nodeId}"` };
+        if (EXTERNAL.has(n.kind)) return { ok: false, error: `${n.label} is outside the business. Disable its link instead.` };
+        const id = blockRuleId(n.id);
+        const i = this.rules.findIndex((r) => r.id === id);
+        if (cmd.blocked === i >= 0) return { ok: true, noop: true };
+        if (cmd.blocked) {
+          this.rules.unshift({
+            id, name: `Disable access: ${n.label}`, from: `node:${n.id}`, to: "any", services: ["any"], action: "deny", enabled: true,
+          });
+        } else this.rules.splice(i, 1);
+        return {
+          ok: true, noop: false, subject: n.id, severity: cmd.blocked ? "warn" : "info",
+          text: cmd.blocked ? `Network access disabled for ${n.label}` : `Network access restored for ${n.label}`,
+        };
+      }
+
+      // ── Identity ──
+      case "node.setRole": {
+        const n = this.nodes.get(cmd.nodeId);
+        if (!n || !this.nodeRole.has(n.id)) return { ok: false, error: `"${cmd.nodeId}" is not a user device` };
+        if (this.nodeRole.get(n.id) === cmd.role) return { ok: true, noop: true };
+        this.nodeRole.set(n.id, cmd.role);
+        return { ok: true, noop: false, subject: n.id, severity: "info", text: `${n.label} now use the ${ROLE_INFO[cmd.role].label} role` };
+      }
+      case "identity.setAccess": {
+        const def = this.roles[cmd.role];
+        if (accessFor(this.roles, cmd.role, cmd.app) === cmd.access) return { ok: true, noop: true };
+        def.access[cmd.app] = cmd.access;
+        const app = serviceLabel(cmd.app, this.topology);
+        return {
+          ok: true, noop: false, subject: cmd.role, severity: cmd.access === "none" ? "warn" : "info",
+          text: `${ROLE_INFO[cmd.role].label} access to ${app} set to ${cmd.access}`,
+        };
+      }
+      case "identity.setMfa": {
+        const def = this.roles[cmd.role];
+        if (def.mfa === cmd.enabled) return { ok: true, noop: true };
+        def.mfa = cmd.enabled;
+        return {
+          ok: true, noop: false, subject: cmd.role, severity: cmd.enabled ? "info" : "warn",
+          text: `MFA ${cmd.enabled ? "enabled" : "disabled"} for ${ROLE_INFO[cmd.role].plural}`,
+        };
+      }
     }
+  }
+
+  /** Error if a rule selector refers to a zone, node or zone kind that doesn't exist. */
+  private ruleRefError(selector: string): string | null {
+    const i = selector.indexOf(":");
+    if (i < 0) return null;
+    const type = selector.slice(0, i);
+    const ref = selector.slice(i + 1);
+    if (type === "zone" && !this.topology.zones.some((z) => z.id === ref)) return `Unknown zone "${ref}"`;
+    if (type === "node" && !this.nodes.has(ref)) return `Unknown device "${ref}"`;
+    return null;
+  }
+
+  private ruleSummary(r: Rule): string {
+    const svc = r.services.map((s) => serviceLabel(s, this.topology)).join(", ");
+    return `${r.action} ${describeSelector(r.from, this.topology)} → ${describeSelector(r.to, this.topology)}, ${svc}`;
   }
 
   // ── Per-tick evaluation ───────────────────────────────────────────────────
@@ -304,6 +434,7 @@ export class Simulation {
     const loadBA = new Map<string, number>();
     const flows: FlowState[] = [];
     const hopsOf: (Hop[] | null)[] = [];
+    const blocking: Record<string, number> = {};
 
     // 1–2. Resolve demands to paths and offered load.
     this.demands.forEach((d, i) => {
@@ -324,6 +455,7 @@ export class Simulation {
         resolved = this.resolved[i] = "reason" in r ? r : { path: r.path, hops: this.physical(r.hops) };
       }
       if ("reason" in resolved) {
+        if (resolved.ruleId) blocking[resolved.ruleId] = (blocking[resolved.ruleId] ?? 0) + d.users;
         flows.push({ ...base, status: "down", reason: resolved.reason });
         hopsOf.push(null);
         return;
@@ -384,6 +516,7 @@ export class Simulation {
     });
 
     this.flows = flows;
+    this.blocking = blocking;
     this.linkSims = linkSims;
     this.nodeSims = this.deriveNodes(flows, linkSims);
     this.appHealth = deriveApps(flows);
@@ -437,25 +570,40 @@ export class Simulation {
     return null;
   }
 
-  private resolve(d: Demand): { path: FlowPath; hops: Hop[] } | { reason: string } {
+  /** Firewall decision for traffic of `service` from device a to device b. */
+  private decision(a: string, b: string, service: string): Decision {
+    return decide(
+      this.rules,
+      { node: this.nodes.get(a)!, zone: this.zoneOf.get(a)! },
+      { node: this.nodes.get(b)!, zone: this.zoneOf.get(b)! },
+      service,
+    );
+  }
+
+  private resolve(d: Demand): Resolved {
     for (const id of [d.client, d.via, d.server]) {
       if (!id) continue;
       const r = this.unusableReason(id);
       if (r) return { reason: r };
     }
-    // Dependency chain: DNS first, then the directory sign-in. Any reachable host will do.
+    // Identity: business apps need the user's role to have access.
+    const role = this.nodeRole.get(d.client);
+    if (role && d.needs.includes("directory") && accessFor(this.roles, role, d.app) === "none") {
+      return { reason: `Access denied: the ${ROLE_INFO[role].label} role has no access to ${this.labels.get(d.app)}` };
+    }
+    // Dependency chain: DNS first, then the directory sign-in. Any reachable, permitted host will do.
     const from = d.via ?? d.client;
     for (const need of d.needs) {
-      const hosts = this.needHosts[need];
-      if (!hosts.length || hosts.some((h) => h.id === from)) continue;
-      if (hosts.some((h) => !this.unusableReason(h.id) && this.route(from, h.id))) continue;
-      const what = need === "dns" ? "DNS" : "Sign-in";
-      return { reason: `${what} unavailable: ${this.explainBreak(from, hosts[0]!.id)}` };
+      const dep = this.dependency(from, need);
+      if (dep.ok) continue;
+      return { reason: dep.reason, ruleId: dep.ruleId };
     }
     const legs: [string, string][] = d.via ? [[d.client, d.via], [d.via, d.server]] : [[d.client, d.server]];
     const nodes: string[] = [d.client];
     const hops: Hop[] = [];
     for (const [a, b] of legs) {
+      const verdict = this.decision(a, b, d.app);
+      if (!verdict.allowed) return { reason: `Blocked by the firewall: ${verdict.reason}`, ruleId: verdict.rule?.id };
       const leg = this.route(a, b);
       if (!leg) return { reason: `No route to ${this.nodes.get(b)!.label}: ${this.explainBreak(a, b)}` };
       for (const h of leg) {
@@ -464,6 +612,135 @@ export class Simulation {
       }
     }
     return { path: { nodes, links: hops.map((h) => h.link.id) }, hops };
+  }
+
+  /** Can `from` use a DNS / sign-in host? Picks the first reachable host the firewall permits. */
+  private dependency(from: string, need: Need): { ok: true; host: NetNode | null } | { ok: false; reason: string; ruleId?: string } {
+    const hosts = this.needHosts[need];
+    const self = hosts.find((h) => h.id === from);
+    if (!hosts.length || self) return { ok: true, host: self ?? null };
+    let blocked: Decision | null = null;
+    for (const h of hosts) {
+      if (this.unusableReason(h.id) || !this.route(from, h.id)) continue;
+      const verdict = this.decision(from, h.id, need);
+      if (verdict.allowed) return { ok: true, host: h };
+      blocked ??= verdict;
+    }
+    const what = need === "dns" ? "DNS" : "Sign-in";
+    if (blocked) return { ok: false, reason: `${what} blocked by the firewall: ${blocked.reason}`, ruleId: blocked.rule?.id };
+    return { ok: false, reason: `${what} unavailable: ${this.explainBreak(from, hosts[0]!.id)}` };
+  }
+
+  // ── Trace tool ────────────────────────────────────────────────────────────
+
+  /**
+   * Explain, step by step, whether `service` traffic from one device to another works right now
+   * and exactly which link, device, rule or permission stops it (build.md §8 Phase 4).
+   */
+  trace(fromId: string, toId: string, service?: string): TraceResult {
+    const from = this.nodes.get(fromId);
+    const to = this.nodes.get(toId);
+    const svc = service ?? (to ? serviceOfHost(to) : "any");
+    const svcLabel = serviceLabel(svc, this.topology);
+    const steps: TraceStep[] = [];
+    if (!from || !to) {
+      return { from: fromId, to: toId, service: svc, serviceLabel: svcLabel, ok: false, verdict: "Unknown device", steps, path: null };
+    }
+    let failed: TraceResult["failed"];
+    const fail = (s: Omit<TraceStep, "ok">) => steps.push({ ...s, ok: steps.some((x) => x.ok === false) ? null : false });
+
+    // 1. Both ends usable.
+    for (const [n, what] of [[from, "Source"], [to, "Destination"]] as const) {
+      const r = this.unusableReason(n.id);
+      if (r) {
+        fail({ kind: "endpoint", title: `${what}: ${n.label}`, detail: r, ref: { type: "node", id: n.id } });
+        failed ??= { type: "node", id: n.id };
+      } else steps.push({ kind: "endpoint", ok: true, title: `${what}: ${n.label}`, ref: { type: "node", id: n.id } });
+    }
+
+    // 2. Dependencies and permission.
+    const needs = from.kind === "internet" ? [] : needsFor(svc);
+    for (const need of needs) {
+      const dep = this.dependency(fromId, need);
+      const name = need === "dns" ? "DNS" : "Sign-in";
+      if (dep.ok) {
+        steps.push({
+          kind: "dependency", ok: true, title: `${name} ${dep.host ? `via ${dep.host.label}` : "(local)"}`,
+          ref: dep.host ? { type: "node", id: dep.host.id } : undefined,
+        });
+      } else {
+        fail({ kind: "dependency", title: `${name} fails`, detail: dep.reason, ref: dep.ruleId ? { type: "rule", id: dep.ruleId } : undefined });
+      }
+    }
+    const role = this.nodeRole.get(fromId);
+    if (role && needs.includes("directory")) {
+      const access = accessFor(this.roles, role, svc);
+      const s = {
+        kind: "permission" as const, title: `Permission: ${ROLE_INFO[role].label} → ${svcLabel}`,
+        detail: access === "none" ? "This role has no access" : `${access === "write" ? "Read & write" : "Read only"} access`,
+        ref: { type: "role" as const, id: role },
+      };
+      if (access === "none") fail(s);
+      else steps.push({ ...s, ok: true });
+    }
+
+    // 3. Firewall policy between the two zones.
+    const verdict = this.decision(fromId, toId, svc);
+    const crossing = `${this.zoneOf.get(fromId)!.name} → ${this.zoneOf.get(toId)!.name}`;
+    const ps = {
+      kind: "policy" as const,
+      title: verdict.rule ? verdict.reason : "Firewall default policy",
+      detail: verdict.rule ? crossing : `${crossing}: ${verdict.reason}`,
+      ref: verdict.rule ? { type: "rule" as const, id: verdict.rule.id } : undefined,
+    };
+    if (verdict.allowed) steps.push({ ...ps, ok: true });
+    else fail(ps);
+
+    // 4. The path, hop by hop. If there's no live route, walk the would-be path to find the break.
+    const live = this.route(fromId, toId);
+    let hops = live;
+    if (!live) {
+      let tree = this.staticTrees.get(fromId);
+      if (!tree) this.staticTrees.set(fromId, (tree = this.buildTree(fromId, false)));
+      hops = this.walk(tree, fromId, toId);
+      if (!hops) fail({ kind: "hop", title: "No path", detail: "No permitted path exists (inbound from the internet is blocked)" });
+    }
+    let broken = false;
+    let at = fromId;
+    for (const h of hops ?? []) {
+      const next = h.forward ? h.link.b : h.link.a;
+      const title = `${this.nodes.get(at)!.label} → ${this.nodes.get(next)!.label}`;
+      const p = live ? null : this.linkProblem(h.link);
+      if (broken) steps.push({ kind: "hop", ok: null, title, ref: { type: "link", id: h.link.id } });
+      else if (p) {
+        broken = true;
+        fail({ kind: "hop", title, detail: p, ref: { type: "link", id: h.link.id } });
+        failed ??= { type: "link", id: h.link.id };
+      } else {
+        const s = this.linkSims[h.link.id];
+        const util = s && s.util > 0.005 ? ` · ${Math.round(s.util * 100)}% used` : "";
+        steps.push({
+          kind: "hop", ok: true, title,
+          detail: `${h.link.dependsOn.length ? "VPN tunnel" : h.link.medium} · ${this.latency.get(h.link.id)!.toFixed(1)} ms${util}`,
+          ref: { type: "link", id: h.link.id },
+        });
+      }
+      at = next;
+    }
+
+    const firstFail = steps.find((s) => s.ok === false);
+    const ok = !firstFail;
+    const nodes = [fromId];
+    for (const h of hops ?? []) nodes.push(h.forward ? h.link.b : h.link.a);
+    return {
+      from: fromId, to: toId, service: svc, serviceLabel: svcLabel, ok,
+      verdict: ok
+        ? `${svcLabel} from ${from.label} to ${to.label} works`
+        : `${firstFail!.title}${firstFail!.detail ? `: ${firstFail!.detail}` : ""}`,
+      steps,
+      path: hops ? { nodes, links: hops.map((h) => h.link.id) } : null,
+      failed,
+    };
   }
 
   /** Current shortest path a → b as hops, or null. */

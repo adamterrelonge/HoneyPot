@@ -10,6 +10,7 @@ import { create } from "zustand";
 import sample from "../data/harbour-finch.json";
 import { buildGraph, type NetGraph } from "../engine/graph";
 import { parseTopology, type Topology } from "../engine/model";
+import type { TraceResult } from "../engine/sim/types";
 import { stressTopology } from "../engine/stress";
 import { sim } from "./sim";
 
@@ -32,9 +33,17 @@ interface AppState {
   /** Latest camera request for the scene; `seq` makes repeated identical requests observable. */
   cameraRequest: (CameraRequest & { seq: number }) | null;
 
+  /** Trace tool: while set, clicking devices fills source then target instead of selecting. */
+  trace: { source: string | null; target: string | null; service: string | null; result: TraceResult | null } | null;
+  policyOpen: "rules" | "access" | null;
+
   /** Validate and load a topology into the map and the simulation worker. */
   loadBusiness: (input: unknown) => void;
   setWizardOpen: (open: boolean) => void;
+  startTrace: (source?: string | null) => void;
+  updateTrace: (patch: Partial<NonNullable<AppState["trace"]>>) => void;
+  endTrace: () => void;
+  setPolicyOpen: (tab: "rules" | "access" | null) => void;
   select: (id: string | null, opts?: { focus?: boolean }) => void;
   hover: (id: string | null) => void;
   setZoom: (zoom: number) => void;
@@ -60,17 +69,34 @@ export const useApp = create<AppState>()((set, get) => ({
   hoveredId: null,
   zoom: 1,
   cameraRequest: null,
+  trace: null,
+  policyOpen: null,
 
   loadBusiness: (input) => {
     const topology = parseTopology(input);
     set({
       topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
-      selectedId: null, hoveredId: null, wizardOpen: false,
+      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null,
     });
     sim.load(input);
   },
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),
+  startTrace: (source = null) => set({ trace: { source, target: null, service: null, result: null }, selectedId: null }),
+  updateTrace: (patch) => {
+    const t = get().trace;
+    if (t) set({ trace: { ...t, ...patch } });
+  },
+  endTrace: () => set({ trace: null }),
+  setPolicyOpen: (policyOpen) => set({ policyOpen }),
   select: (id, opts) => {
+    const t = get().trace;
+    if (t && id) {
+      // Trace mode: the first click picks the source, the next ones the destination.
+      if (!t.source || (t.target && id === t.source)) set({ trace: { ...t, source: id, target: null, service: null, result: null } });
+      else if (id !== t.source) set({ trace: { ...t, target: id, service: null, result: null } });
+      if (opts?.focus) get().camera({ kind: "focus", id });
+      return;
+    }
     set({ selectedId: id });
     if (id && opts?.focus) get().camera({ kind: "focus", id });
   },

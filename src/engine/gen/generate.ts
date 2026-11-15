@@ -467,7 +467,24 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
   }
 
   // ── Layout ─────────────────────────────────────────────────────────────────
-  const { zones, nodes } = layout(d.zones);
+  const laid = layout(d.zones);
+  const zones = laid.zones;
+  // Identity: finance teams approve and edit records; privileged tags already map to that role.
+  const nodes = laid.nodes.map((n) => {
+    if (n.kind !== "desktop" && n.kind !== "laptop") return n;
+    if (n.tags?.includes("admin")) return { ...n, role: "it-admin" as const };
+    if (/finance/i.test(n.label)) return { ...n, role: "manager" as const };
+    return n;
+  });
+  const policy = { rules: defaultRules(spec, nodes, zones) };
+  const identity = {
+    roles: {
+      staff: { mfa: spec.budget === "generous", access: { "practice-db": "read" as const } },
+      manager: { mfa: spec.budget === "generous", access: { "practice-db": "write" as const } },
+      privileged: { mfa: spec.budget !== "lean", access: { "practice-db": "write" as const } },
+      "it-admin": { mfa: true, access: { "practice-db": "write" as const } },
+    },
+  };
   return {
     meta: {
       name: spec.name.trim(),
@@ -480,7 +497,48 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
     zones,
     nodes,
     links: d.links,
+    policy,
+    identity,
   };
+}
+
+// ── Default policy ───────────────────────────────────────────────────────────
+
+type RuleIn = NonNullable<TopologyInput["policy"]>["rules"] extends (infer R)[] | undefined ? R : never;
+
+/**
+ * The firewall policy a competent admin would start from, given the compliance choices
+ * (build.md §8 Phase 4). Rules are zone-to-zone; `tag:` targets guest devices wherever they are.
+ * No compliance and no guests → no rules: a flat network on the default policy.
+ */
+function defaultRules(spec: BusinessSpec, nodes: NodeIn[], zones: TopologyInput["zones"]): RuleIn[] {
+  const comp = new Set(spec.compliance);
+  const rules: RuleIn[] = [];
+  const add = (id: string, name: string, from: string, to: string, services: string[], action: "allow" | "deny") =>
+    rules.push({ id, name, from, to, services, action, enabled: true });
+  const hasZone = (kind: ZoneKind) => zones.some((z) => z.kind === kind);
+
+  if (nodes.some((n) => n.tags?.includes("guest"))) {
+    add("guest-dns", "Guest Wi-Fi: DNS", "tag:guest", "any", ["dns"], "allow");
+    add("guest-internet", "Guest Wi-Fi: internet only", "tag:guest", "kind:internet", ["web"], "allow");
+    add("guest-isolation", "Guest Wi-Fi isolation", "tag:guest", "any", ["any"], "deny");
+  }
+  if (comp.has("pci-dss") && hasZone("secure")) {
+    add("pci-dns", "Card terminals: DNS", "kind:secure", "any", ["dns"], "allow");
+    if (nodes.some((n) => n.id === "payments")) add("pci-payments", "Card terminals → payment provider", "kind:secure", "node:payments", ["payments"], "allow");
+    add("pci-egress", "Card data environment: nothing else out", "kind:secure", "any", ["any"], "deny");
+    add("pci-ingress", "Card data environment: no way in", "any", "kind:secure", ["any"], "deny");
+  }
+  if (comp.has("health-data") && hasZone("clinical")) {
+    if (nodes.some((n) => n.id === "pacs-01")) add("clinical-imaging", "Clinic imaging → archive", "kind:branch", "node:pacs-01", ["imaging"], "allow");
+    add("clinical-office", "Office → clinical blocked", "kind:office", "kind:clinical", ["any"], "deny");
+    add("clinical-branch", "Branches → clinical blocked", "kind:branch", "kind:clinical", ["any"], "deny");
+  }
+  if (comp.has("iso27001") && hasZone("factory")) {
+    add("ot-office", "Office → factory floor blocked", "kind:office", "kind:factory", ["any"], "deny");
+    add("ot-branch", "Branches → factory floor blocked", "kind:branch", "kind:factory", ["any"], "deny");
+  }
+  return rules;
 }
 
 // ── Templates ────────────────────────────────────────────────────────────────
@@ -527,6 +585,12 @@ function officeZone(
     site: s.n, uplink: ap, medium: "wifi", sharedMbps: cap, tags: ["byod"], alwaysGroup: true,
   });
   if (withCameras) {
+    // The IT team: few people, the most powerful accounts in the business.
+    addSet(c, z, {
+      key: `${key}-it`, single: "IT Admin Laptop", plural: "IT admin laptops", kind: "laptop",
+      count: c.spec.size === "enterprise" ? 3 : 1, vlan: 40, site: s.n, uplink: ap, medium: "wifi", sharedMbps: cap,
+      os: "Windows 11 23H2", tags: ["privileged", "admin"],
+    });
     addSet(c, z, {
       key: `${key}-cam`, single: `${name} Camera`, plural: `${name} cameras`, kind: "camera",
       count: 1 + Math.floor(staff / 50), vlan: 60, site: s.n, uplink: sw, medium: "copper",

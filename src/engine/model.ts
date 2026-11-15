@@ -65,7 +65,46 @@ export const NodeSchema = z.object({
   tags: z.array(z.string()).default([]),
   /** A group node stands for this many identical devices (build.md §6, grouping). */
   count: z.number().int().min(1).default(1),
+  /** Identity role of the people using this device (Phase 4). Defaults: privileged tag → privileged, else staff. */
+  role: z.enum(["staff", "manager", "privileged", "it-admin"]).optional(),
 });
+
+// ── Policy & identity (Phase 4) ─────────────────────────────────────────────
+
+export const ROLES = ["staff", "manager", "privileged", "it-admin"] as const;
+export type Role = (typeof ROLES)[number];
+export const ACCESS_LEVELS = ["none", "read", "write"] as const;
+export type Access = (typeof ACCESS_LEVELS)[number];
+
+/**
+ * Rule endpoint: `any`, a zone kind (`kind:office`), a zone (`zone:z-hq-floor-1`) or a single
+ * device (`node:payments`). Zone-to-zone is the normal granularity; `node:` exists for hosts
+ * like a payment provider and for "disable access" on one device.
+ */
+export const SELECTOR_RE = /^(any|kind:[a-z]+|zone:[a-z0-9-]+|node:[a-z0-9-]+|tag:[a-z0-9-]+)$/;
+const Selector = z
+  .string()
+  .regex(SELECTOR_RE, "selector must be any | kind:<zone kind> | zone:<id> | node:<id> | tag:<tag>");
+
+export const RuleSchema = z.object({
+  id: Id,
+  name: z.string().min(1).max(80),
+  from: Selector,
+  to: Selector,
+  /** App or dependency ids (`files`, `dns`, `directory`, …) or `any`. */
+  services: z.array(z.string().min(1)).min(1),
+  action: z.enum(["allow", "deny"]),
+  enabled: z.boolean().default(true),
+});
+export type Rule = z.output<typeof RuleSchema>;
+export type RuleInput = z.input<typeof RuleSchema>;
+
+export const RoleDefSchema = z.object({
+  mfa: z.boolean(),
+  /** Per-app access. Apps not listed default to read. */
+  access: z.record(z.string(), z.enum(ACCESS_LEVELS)).default({}),
+});
+export type RoleDef = z.output<typeof RoleDefSchema>;
 
 export const LinkSchema = z.object({
   id: Id,
@@ -106,10 +145,29 @@ export const TopologySchema = z
     zones: z.array(ZoneSchema).min(1),
     nodes: z.array(NodeSchema),
     links: z.array(LinkSchema),
+    /** Ordered firewall rules, first match wins (build.md §6, Phase 4). */
+    policy: z.object({ rules: z.array(RuleSchema).default([]) }).default({ rules: [] }),
+    /** Role definitions; missing roles fall back to engine defaults. */
+    identity: z.object({ roles: z.partialRecord(z.enum(ROLES), RoleDefSchema).default({}) }).default({ roles: {} }),
   })
   .superRefine((t, ctx) => {
     const issue = (path: (string | number)[], message: string) =>
       ctx.addIssue({ code: "custom", path, message });
+
+    // Rules must reference real zones/nodes and have unique ids.
+    const zoneIds = new Set(t.zones.map((z) => z.id));
+    const nodeIdSet = new Set(t.nodes.map((n) => n.id));
+    const ruleIds = new Set<string>();
+    t.policy.rules.forEach((r, i) => {
+      if (ruleIds.has(r.id)) issue(["policy", "rules", i, "id"], `duplicate rule id "${r.id}"`);
+      ruleIds.add(r.id);
+      for (const side of ["from", "to"] as const) {
+        const [type, ref] = r[side].split(":") as [string, string | undefined];
+        if (type === "zone" && !zoneIds.has(ref!)) issue(["policy", "rules", i, side], `rule "${r.id}" references unknown zone "${ref}"`);
+        if (type === "node" && !nodeIdSet.has(ref!)) issue(["policy", "rules", i, side], `rule "${r.id}" references unknown node "${ref}"`);
+        if (type === "kind" && !(ZONE_KINDS as readonly string[]).includes(ref!)) issue(["policy", "rules", i, side], `rule "${r.id}" references unknown zone kind "${ref}"`);
+      }
+    });
 
     for (const key of ["zones", "nodes", "links"] as const) {
       const seen = new Set<string>();

@@ -21,8 +21,14 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
     scene.setInsets(insets);
 
     let lastSeq = useApp.getState().cameraRequest?.seq ?? 0;
+    let lastTrace: unknown = undefined;
     const unsub = useApp.subscribe((s) => {
       scene.setSelection(s.selectedId);
+      const trace = s.trace?.result ?? null;
+      if (trace !== lastTrace) {
+        lastTrace = trace;
+        scene.setTrace(trace);
+      }
       scene.setHover(s.hoveredId);
       const req = s.cameraRequest;
       if (req && req.seq !== lastSeq) {
