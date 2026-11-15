@@ -45,3 +45,8 @@ body {
     transition: none !important;
   }
 }
+
+/* Device artwork comes in any aspect ratio (including custom images): never stretch it. */
+img {
+  object-fit: contain;
+}

@@ -9,6 +9,7 @@ import type { NodeSim } from "../engine/sim/types";
 import { emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { FirmwareSection } from "./lifecycle-panels";
 import { FLOW_STATUS, UtilBar, formatRate } from "./sim-panels";
 
 const STATUS_TEXT: Record<NodeStatus, { label: string; cls: string }> = {
@@ -204,6 +205,7 @@ export function Inspector({ width }: { width: number }) {
 
             <Actions node={node} live={live} />
             <AccessActions node={node} />
+            <FirmwareSection node={node} />
             <LiveTraffic nodeId={node.id} />
 
             <Section title={`Connections (${links.length})`}>

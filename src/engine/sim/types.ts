@@ -2,7 +2,10 @@
  * Simulation types shared by the engine, the worker and the UI (build.md §6, Phase 2).
  * Everything here is plain data so snapshots can cross the worker boundary by structured clone.
  */
+import type { DeviceSim } from "../firmware/lifecycle";
 import type { NodeStatus, Role, RoleDef, Rule } from "../model";
+
+export type { DeviceSim };
 
 /** User-facing business applications. Each demand belongs to exactly one. */
 export const APP_IDS = [
@@ -125,6 +128,9 @@ export interface Snapshot {
   policy: { rules: Rule[]; blocking: Record<string, number> };
   /** Current role definitions and every person-device's role. */
   identity: { roles: Record<Role, RoleDef>; nodeRoles: Record<string, Role> };
+  /** Firmware/software versions, exposure, condition and age per device (Phase 5). */
+  devices: Record<string, DeviceSim>;
+  failuresEnabled: boolean;
   hash: string;
 }
 

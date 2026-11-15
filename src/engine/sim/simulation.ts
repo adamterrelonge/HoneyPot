@@ -17,6 +17,7 @@ import type { Link, NetNode, NodeKind, Role, RoleDef, Rule, Topology, Zone, Zone
 import {
   PERSON_KINDS, ROLE_INFO, accessFor, decide, defaultRole, describeSelector, resolveRoles, type Decision,
 } from "../policy/policy";
+import { Lifecycle } from "../firmware/lifecycle";
 import { blockRuleId, parseCommand, type Command, type CommandResult, type LoggedCommand } from "./commands";
 import { minuteOfTick, windowCurve, workdayCurve } from "./clock";
 import { APP_INFO, appLabel, deriveDemands, needsFor, serviceLabel, serviceOfHost } from "./demands";
@@ -62,6 +63,8 @@ export interface SimOptions {
   seed?: number;
   /** Start the clock at this tick instead of 0 (tests and "jump to" without simulating the gap). */
   startTick?: number;
+  /** Random hardware failures (default on). */
+  failures?: boolean;
 }
 
 export class Simulation {
@@ -99,6 +102,8 @@ export class Simulation {
   private readonly nodeRole = new Map<string, Role>();
   private readonly zoneOf = new Map<string, Zone>();
   private blocking: Record<string, number> = {};
+  /** Firmware, failures and repairs (Phase 5). */
+  readonly lifecycle: Lifecycle;
   /** Number of shortest-path trees built (for tests: proves caching works). */
   pathComputations = 0;
 
@@ -153,6 +158,7 @@ export class Simulation {
       this.underlay.set(l.id, hops);
       this.latency.set(l.id, hops.reduce((s, h) => s + h.link.latencyMs, 0));
     }
+    this.lifecycle = new Lifecycle(topology, this.seed, opts.failures ?? true);
     const hosts = (service: string) => topology.nodes.filter((n) => n.services.includes(service));
     this.needHosts = { dns: hosts("dns"), directory: hosts("directory") };
 
@@ -185,8 +191,18 @@ export class Simulation {
     for (let i = 0; i < ticks; i++) {
       this._tick++;
       this.stepNoise();
+      // Firmware jobs, maintenance windows, failures and repairs (Phase 5).
+      const life = this.lifecycle.step(this._tick);
+      for (const e of life.events) this.emit(e.severity, e.text, e.subject);
+      if (life.changed) this.invalidate();
       this.evaluate(false);
     }
+  }
+
+  /** Reachability or device usability changed: recompute paths lazily. */
+  private invalidate(): void {
+    this.trees.clear();
+    this.resolved = [];
   }
 
   /** Validate and apply a command at the current tick. */
@@ -222,6 +238,8 @@ export class Simulation {
         ) as Record<Role, RoleDef>,
         nodeRoles: Object.fromEntries(this.nodeRole),
       },
+      devices: this.lifecycle.snapshot(),
+      failuresEnabled: this.lifecycle.failuresEnabled,
       hash: this.hash(),
     };
   }
@@ -240,6 +258,7 @@ export class Simulation {
     for (const f of this.flows) parts.push(`${f.id}:${f.status}:${f.throughputMbps.toFixed(4)}:${f.latencyMs.toFixed(3)}`);
     parts.push(`e${this.eventSeq}`);
     parts.push(JSON.stringify(this.rules), JSON.stringify(this.roles), JSON.stringify([...this.nodeRole]));
+    parts.push(this.lifecycle.hashPart());
     return fnv1a(parts.join("|")).toString(16).padStart(8, "0");
   }
 
@@ -383,6 +402,17 @@ export class Simulation {
           text: `MFA ${cmd.enabled ? "enabled" : "disabled"} for ${ROLE_INFO[cmd.role].plural}`,
         };
       }
+
+      // ── Lifecycle (Phase 5) ──
+      case "firmware.install":
+      case "firmware.cancel":
+      case "firmware.rollback":
+      case "hardware.setFailures":
+      case "device.fail": {
+        const res = this.lifecycle.apply(cmd, this._tick);
+        if (!res.ok || res.noop) return res;
+        return { ok: true, noop: false, text: res.event.text, severity: res.event.severity, subject: res.event.subject ?? "" };
+      }
     }
   }
 
@@ -503,10 +533,19 @@ export class Simulation {
         // Tunnels add no latency of their own: their underlay hops are in the list.
         latency += (h.link.dependsOn.length ? 0 : h.link.latencyMs) + queueDelay(u);
       }
+      // A device whose settings didn't survive an update passes traffic badly (Phase 5).
+      const broken = f.path?.nodes.find((id) => this.lifecycle.isConfigBroken(id));
+      if (broken) {
+        share = Math.min(share, 0.5);
+        latency += 60;
+      }
       f.throughputMbps = f.demandMbps * share;
       f.latencyMs = latency;
       f.loss = 1 - share;
-      if (worst && (share < 0.8 || f.loss > d.lossBudget)) {
+      if (broken) {
+        f.status = "degraded";
+        f.reason = this.lifecycle.degradedReason(broken)!;
+      } else if (worst && (share < 0.8 || f.loss > d.lossBudget)) {
         f.status = "degraded";
         f.reason = `Slow: ${this.linkLabel(worst.hop.link)} is at ${pct(worst.util)}`;
       } else if (latency > d.latencyBudgetMs) {
@@ -537,7 +576,7 @@ export class Simulation {
   }
 
   private usable(id: string): boolean {
-    return this.powered.get(id) === true && this.isolated.get(id) === false;
+    return this.powered.get(id) === true && this.isolated.get(id) === false && !this.lifecycle.isDown(id);
   }
 
   /** A link carries traffic when it is up, both ends are usable and (for tunnels) its underlay is too. */
@@ -567,7 +606,7 @@ export class Simulation {
     const n = this.nodes.get(id)!;
     if (!this.powered.get(id)) return `${n.label} is powered off`;
     if (this.isolated.get(id)) return `${n.label} is isolated`;
-    return null;
+    return this.lifecycle.downReason(id);
   }
 
   /** Firewall decision for traffic of `service` from device a to device b. */
@@ -859,6 +898,11 @@ export class Simulation {
       const isolated = this.isolated.get(n.id)!;
       if (!powered || isolated) {
         out[n.id] = { status: "offline", powered, isolated, reasons: [powered ? "Isolated: all ports disabled" : "Powered off"] };
+        continue;
+      }
+      const down = this.lifecycle.downReason(n.id);
+      if (down) {
+        out[n.id] = { status: "offline", powered, isolated, reasons: [down] };
         continue;
       }
       const reasons: string[] = [];

@@ -61,6 +61,13 @@ sends network traffic beyond loading its own assets.
 | Worker RPC | **Comlink 4** | `src/worker/sim.worker.ts` exposes `SimHost`. |
 | Persistence | IndexedDB via Dexie *(Phase 7)* | |
 
+### Device artwork
+Device images in `public/emoji/` may be **any aspect ratio** (the project now uses custom images alongside Fluent
+3D emoji). They are never stretched:
+- On the canvas, sprites are scaled uniformly so their longest side equals the kind's size (`fitSprite` in
+  `scene.ts`), anchored at the bottom centre.
+- In the DOM, a global `img { object-fit: contain }` keeps every icon's proportions inside its box.
+
 ### Emoji assets
 Nodes are drawn as **3D emoji**. Apple's emoji artwork is proprietary and can't be shipped, and
 native emoji fonts look different on every OS. We therefore use **Microsoft Fluent Emoji 3D**
@@ -133,10 +140,12 @@ src/
     sim/         rng, clock, commands, demands, simulation, types   (policy/, incidents/ later)
     gen/         spec (BusinessSpec + wizard metadata), generate (templates → TopologyInput)
     policy/      policy.ts: rule matching, decisions, roles (pure)
+    firmware/    catalog.ts (products, releases, real CVE advisories), lifecycle.ts (installs, failures)
   worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
   render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
   state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade)
-  ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx
+  ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx,
+                 lifecycle-panels.tsx
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -300,8 +309,51 @@ Steps run in order:
 5. Each hop with medium, latency and utilisation, or the would-be path with the first broken link or device.
 After the first ✗, later steps show as not reached.
 
-**Planned additions:** Phase 5 `FirmwareRelease`, `Vulnerability`.
-Phase 6 `Incident`, `Scenario`, `Objective`.
+**Phase 5 additions** (`engine/firmware`):
+```ts
+Product   { id, vendor, name, kinds[], providerManaged?, releases: Release[], advisories: Advisory[] }
+Release   { version, date: YYYY-MM, stability 0–1, notes }
+Advisory  { cve (real), title, severity, cvss, exploited (CISA KEV), realWorld (the real product), fixedIn, since?, needsService? }
+DeviceSim { product, version, latest, previous, providerManaged, ageYears, condition: ok|updating|config-broken|bricked|failed,
+            fault, untilMinute, job{to,endsMinute,rollback}, scheduled{version,atMinute}, advisories: CVE[] }
+Commands  firmware.install{nodeId,version,when:now|tonight} | firmware.cancel | firmware.rollback
+          | hardware.setFailures{enabled} | device.fail{nodeId,fault?,hours?}
+```
+**Real CVEs:** vendors are fictional, but each product line is modelled on a real one and its advisories carry
+the real CVE id, CVSS v3 score, exploited flag and the real product it affects (`realWorld`). For example,
+Kestrel KestrelOS is modelled on Fortinet FortiOS and carries CVE-2023-27997. The UI says so and links to NVD.
+Fixed-in versions are this simulation's own release numbers. CVE details were written from memory: verify
+against NVD when changing the catalogue.
+
+**Lines:**
+- Firewall and VPN: Fortinet- and Pulse/Ivanti-modelled.
+- Switch (Cisco Smart Install); ISP router (Arcadyan, provider-managed: you can't update it); branch router
+  (Realtek SDK).
+- AP (KRACK); NAS (QNAP HBS3); camera (Hikvision); printer (HP); PLC (Rockwell); imaging device (EternalBlue).
+- Windows Server (Zerologon on DCs only, PrintNightmare); Windows client (PrintNightmare); portal app (Log4Shell).
+
+Device → line is matched by firmware prefix, then by OS. Initial versions follow the budget: lean = oldest,
+standard = one or two behind, generous = latest. The generator ships firmware this way too.
+
+**Install outcomes (accepted defaults):**
+- Downtime 5–20 min (rollback 5–10).
+- Config migration failure 2–8% (scaled by release stability). The device then degrades every flow through it:
+  throughput ×0.5, +60 ms, with a "roll back" reason.
+- Brick 0.5–2% on lean (×0.5 standard, ×0.25 generous). The device is dead for 4 h, then replaced on the
+  previous version.
+- Rollback is always possible unless bricked.
+- Outcomes are seeded per device and tick. Group updates apply to the whole group.
+
+**Maintenance window:** "Tonight" schedules for the next 22:00. Cancel is allowed until it starts.
+
+**Hardware ageing and random failures (on by default, can be switched off):**
+- Age by budget: lean 3–9 years, standard 1–6, generous 0–4.
+- Per-tick hazard = annual failure rate (by kind, 1–6%) × (1 + 0.35 × years over 4) × budget factor (lean 1.5,
+  standard 1, generous 0.7) × 52 (compression: roughly one failure a simulated week for a small business)
+  ÷ ticks per year.
+- Only single devices fail, not groups. Repairs take 2–6 h.
+
+**Planned additions:** Phase 6 `Incident`, `Scenario`, `Objective`.
 
 ---
 
@@ -322,7 +374,8 @@ Phase 6 `Incident`, `Scenario`, `Objective`.
 | Policy | ordered firewall rules (src zone/subnet, dst, service, allow/deny), ACLs | stateful inspection internals |
 | Identity | users, groups, role permissions on services, MFA on/off, privileged accounts | Kerberos/LDAP internals |
 | Devices | status, CPU/mem load as %, firmware version, config flags, lifespan | real OS behaviour |
-| Firmware | catalogue with CVEs, stability, features, update downtime, brick risk, config compatibility | binary images |
+| Firmware | catalogue with real CVE references, stability, update downtime, config-migration and brick risk, rollback, provider-managed kit, a 22:00 maintenance window | binary images, staged rollouts, vendor support contracts |
+| Hardware | age, per-kind failure rates compressed ×52, 2–6 h repairs, 4 h brick replacement | spares on site, partial group failures, warranty |
 | Attacks | kill-chain state machines (recon → initial access → lateral → impact) with probabilities | real exploit code (never) |
 | Business | services → business functions → cost/minute, staff idle, SLA | full accounting |
 
@@ -376,10 +429,12 @@ criteria pass and a diary entry exists.
 - **Done when:** policy evaluation tests (rule ordering, default deny, VLAN isolation) pass and
   the trace explains every block.
 
-### Phase 5 — Device lifecycle & firmware
+### Phase 5 — Device lifecycle & firmware ✅ (2026-11-15)
 - Firmware catalogue per vendor/kind with versions, CVEs, stability, features and EOL dates.
 - Install flow: downtime window, reboot, brick chance, config migration; rollback.
 - Hardware ageing/failure, CPU/memory load, disk full, certificate expiry.
+- Decisions: real CVE numbers (modelled products, real product named); accepted outcome defaults; install now or
+  tonight; random failures on by default.
 - **Done when:** firmware outcome tests (seeded) pass and the vulnerability exposure view is correct.
 
 ### Phase 6 — Incidents, scenarios & scoring

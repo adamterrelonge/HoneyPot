@@ -36,6 +36,11 @@ interface AppState {
   /** Trace tool: while set, clicking devices fills source then target instead of selecting. */
   trace: { source: string | null; target: string | null; service: string | null; result: TraceResult | null } | null;
   policyOpen: "rules" | "access" | null;
+  vulnsOpen: boolean;
+  /** Colour devices on the map by their worst known vulnerability. */
+  riskLens: boolean;
+  setVulnsOpen: (open: boolean) => void;
+  setRiskLens: (on: boolean) => void;
 
   /** Validate and load a topology into the map and the simulation worker. */
   loadBusiness: (input: unknown) => void;
@@ -71,12 +76,16 @@ export const useApp = create<AppState>()((set, get) => ({
   cameraRequest: null,
   trace: null,
   policyOpen: null,
+  vulnsOpen: false,
+  riskLens: false,
+  setVulnsOpen: (vulnsOpen) => set({ vulnsOpen }),
+  setRiskLens: (riskLens) => set({ riskLens }),
 
   loadBusiness: (input) => {
     const topology = parseTopology(input);
     set({
       topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
-      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null,
+      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false,
     });
     sim.load(input);
   },

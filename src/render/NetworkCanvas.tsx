@@ -30,6 +30,7 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
         scene.setTrace(trace);
       }
       scene.setHover(s.hoveredId);
+      scene.setRiskLens(s.riskLens);
       const req = s.cameraRequest;
       if (req && req.seq !== lastSeq) {
         lastSeq = req.seq;

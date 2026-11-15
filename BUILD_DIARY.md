@@ -431,3 +431,118 @@ hardware ageing, and a vulnerability-exposure view. Firmware strings are already
 4. **Hardware ageing and random failures:** turn on by default (a seeded, rare chance of disk, PSU or switch
    failure, higher for old kit and lean budgets), or keep a calm mode with no random failures unless a scenario
    asks for them?
+
+---
+
+## Phase 5 — Device lifecycle & firmware · 2026-11-15 · ✅ complete
+
+### 1. Summary
+- **Decisions confirmed by you:** use **real CVE numbers**; accept the install-outcome defaults; offer **install
+  now** and **tonight's maintenance window**; **random hardware failures on by default**. You also asked that
+  device images are **never stretched or skewed** (you replaced several with your own images).
+- **Images:** your 16 new device images are non-square (e.g. database 87×113, switch 116×90), and the scene had
+  forced every sprite into a square. Fixed:
+  - Canvas sprites now scale uniformly by their longest side (`fitSprite`), including group stacks and crowds.
+  - Every `<img>` uses `object-fit: contain` globally.
+  - Verified on the map, the sidebar, the Inspector and the sheets.
+- **Catalogue (`engine/firmware/catalog.ts`):** 16 product lines with dated releases, stability scores and 21
+  advisories. Vendors stay fictional, but every advisory carries the **real CVE id, CVSS v3 score, exploited
+  flag and the real affected product** (e.g. KestrelOS ↔ Fortinet FortiOS: CVE-2022-40684, CVE-2023-27997,
+  CVE-2024-21762). Lines covered: SecureLink ↔ Pulse/Ivanti, Smart Install, Arcadyan, Realtek, KRACK, QNAP HBS3,
+  Hikvision ×2, HP "Printing Shellz", Rockwell Logix, EternalBlue, Zerologon (DCs only), PrintNightmare and
+  Log4Shell. The UI states this and links each CVE to NVD.
+- **Lifecycle (`engine/firmware/lifecycle.ts`):**
+  - Installed versions (from firmware, or by budget for OS/app lines), previous version and hardware age.
+  - Seeded install outcomes (5–20 min reboot; 2–8% config failure; 0.5–2% brick on lean).
+  - Rollback; 4 h brick replacement on the old version; a 22:00 maintenance window with cancel.
+  - Provider-managed ISP routers can't be updated by you.
+  - Random failures by kind × age × budget (×52 compression) with 2–6 h repairs; `device.fail` for scenarios.
+- **Simulation:**
+  - Lifecycle steps every tick (events plus cache invalidation).
+  - Updating, bricked and failed devices are unusable, with reasons that flow into "Why", traces and services.
+  - Config-broken devices degrade every flow through them.
+  - Snapshots carry `devices` and `failuresEnabled`; the hash includes lifecycle state.
+- **Generator:** ships firmware by budget (lean oldest, generous latest).
+- **UI:**
+  - Inspector **Firmware / Software & patches** section: installed and latest version, hardware age, condition
+    banner, CVE list, a version picker with dates, **Install now / Tonight 22:00 / Cancel / Roll back**.
+  - **Vulnerabilities** sheet (top-bar badge with the exposed device count): grouped by CVE, sorted
+    exploited → severity → CVSS, with affected device chips (click to focus), **Patch all tonight**, a
+    provider-managed note, and a **risk lens** that rings devices on the map by worst severity.
+  - Devices that are updating get a blue status dot.
+  - **Random hardware failures** switch in the Business services panel.
+
+### 2. Tests run
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `npm run typecheck` | ✅ 0 errors |
+| Unit tests | `npm test` | ✅ **106 / 106** passed (7 files) |
+| Build | `npm run build` | ✅ ~1.9 s |
+| Visual: images | Sample map, Sidebar, Inspector | ✅ custom images keep their proportions (switch wide and flat, servers tall, padlock upright); `object-fit: contain` on all imgs |
+| Visual: firmware section | Edge Firewall | ✅ KestrelOS 7.2.4 → latest 7.4.4, age 3 years, CVE-2023-27997 and CVE-2024-21762 (critical, exploited, Fortinet FortiOS), version picker, Install now / Tonight |
+| Visual: vulnerabilities sheet | Top bar → Vulnerabilities (14) | ✅ 10 CVEs across 14 devices, sorted; Log4Shell → **Patch all tonight** → "All scheduled" plus an event for the 22:00 window; ISP router shows "Your provider must patch this" |
+| Visual: risk lens | Toggle on | ✅ red/orange rings under exposed devices; 0 console errors |
+
+New tests (13):
+- Catalogue consistency (dates ordered, fix versions exist, CVE format, CVSS range).
+- Every firmware string from the sample and the generator is recognised.
+- Exposure maths (KestrelOS 7.2.4 vs 7.2.7 vs 7.0.6; Zerologon only on the DC).
+- Lean ships more exposure than generous (generous = 0).
+- An install takes 5–20 min offline with a reason, then clears the exposure.
+- **4,000 seeded installs:** config failure 1.5–4.5% and brick 0.2–1.5% for a 0.93-stability release on lean
+  (matching the accepted defaults).
+- Bricked: no rollback, replaced after 4 h on the old version.
+- Config failure degrades flows until rollback restores them.
+- Refusals: provider-managed, unknown version, no firmware.
+- Maintenance window runs exactly at 22:00, and cancel works.
+- Manual failure: offline with the fault, back after repair.
+- Random failure rate per simulated week is in range, lean > generous, and zero when switched off.
+- Deterministic replay including installs, the schedule and random failures.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Your new images looked stretched | `sprite.setSize(size)` forced a square; DOM imgs had fixed w/h | Uniform `fitSprite`; global `object-fit: contain` |
+| A stray list bullet before every card in the vulnerabilities sheet | The advisory line was an `<li>` used outside a list | It's now a `<div>`; the Inspector wraps it in an `<li>` inside its `<ul>` |
+| The ISP router's card said "All scheduled" | Provider-managed devices were treated as already handled | The button is hidden; "Your provider must patch this" shows instead |
+| Failure-rate test timed out | 18 business-weeks simulated tick by tick | Explicit 60 s timeout |
+| One `tsc` run took over 2 minutes | Machine under memory pressure (the earlier dev-server kill had the same cause) | Ran in the background and completed with 0 errors; no code change |
+
+### 4. Known limitations / debt
+- **The CVE details were written from memory** (ids, CVSS, KEV status, affected products). The well-known
+  ones are very likely right, but CVE-2021-39238 (HP, CVSS 9.3), CVE-2021-28799 (QNAP, 9.8) and
+  CVE-2022-27255 (Realtek, 9.8) should be **spot-checked on NVD**. A Phase 8 task could verify the catalogue
+  against the NVD API at build time.
+- Fixed-in versions are fictional by design, so the "real-world" line is the only claim about real products.
+- Groups update as a whole (one outcome for all 40 cameras); partial group failures aren't modelled.
+- Vulnerabilities don't change behaviour yet: nothing exploits them until Phase 6 incidents.
+- The OS patch level is one "monthly rollup" version per line, not per-KB patches.
+- The Inspector's firmware section adds height; it may want collapsible sections in Phase 8.
+
+### 5. Ideas for later
+- A change calendar: everything scheduled for tonight on one timeline, with the services it'll interrupt.
+- "Test on one first": update a single device of a type before the rest (pairs with splitting groups later).
+- Show a "will interrupt" preview before Install now (e.g. "Edge Firewall: everyone loses internet ~12 min").
+- Vendor advisory feed in the activity log ("New advisory: CVE-…") as scenario fuel.
+- Warranty and spares: generous budgets get 1 h on-site replacement instead of 2–6 h.
+
+### 6. Hand-off for Phase 6 — Incidents, scenarios & scoring
+**Start at:** `build.md` §8 Phase 6. Add `src/engine/incidents/` with seeded kill-chain state machines that use
+everything built so far:
+- **Initial access** via exposed CVEs (exploited ones first), default-credential cameras, phishing a role
+  without MFA, or the internet-facing portal.
+- **Lateral movement** constrained by firewall rules.
+- **Impact:** ransomware on file/DB servers, NAS encryption (unless offsite backup), data theft.
+Defenders respond with the existing tools (isolate, disable access, patch, rules). Add business impact
+(cost/minute, staff idle), scenario JSON and a score.
+
+**Decisions needed from you:**
+1. **Incident mix:** proposed ten: ransomware, phishing → account takeover, exploited edge device (VPN or
+   firewall CVE), DDoS on the portal, ISP outage, DNS misconfiguration, expired certificate, backup saturating
+   the WAN, a failed update, and an insider copying data. Keep all, or start with a subset?
+2. **Pacing:** scripted scenarios ("Monday 10:00, the VPN is exploited") *and* a free-play mode where incidents
+   arrive randomly (seeded) based on exposure? Or scripted only at first?
+3. **Scoring:** proposed money lost (cost per minute of downtime per service and staff idle), data exposed,
+   time to contain, and spend on fixes, against a budget. Show a running score plus an after-action report?
+4. **Honeypot/decoy nodes:** let the player deploy a decoy that alerts instantly when touched (making lateral
+   movement visible). Include it in Phase 6?

@@ -26,6 +26,19 @@ export const CommandSchema = z.discriminatedUnion("type", [
     type: z.literal("identity.setAccess"), role: z.enum(ROLES), app: z.string().min(1), access: z.enum(ACCESS_LEVELS),
   }),
   z.object({ type: z.literal("identity.setMfa"), role: z.enum(ROLES), enabled: z.boolean() }),
+  // Phase 5: firmware and hardware lifecycle
+  z.object({
+    type: z.literal("firmware.install"), nodeId: z.string().min(1), version: z.string().min(1),
+    when: z.enum(["now", "tonight"]).default("now"),
+  }),
+  z.object({ type: z.literal("firmware.cancel"), nodeId: z.string().min(1) }),
+  z.object({ type: z.literal("firmware.rollback"), nodeId: z.string().min(1) }),
+  z.object({ type: z.literal("hardware.setFailures"), enabled: z.boolean() }),
+  /** Fail a device now (scenarios and tests); it is replaced automatically. */
+  z.object({
+    type: z.literal("device.fail"), nodeId: z.string().min(1), fault: z.string().min(1).optional(),
+    hours: z.number().positive().max(72).optional(),
+  }),
 ]);
 
 export type Command = z.output<typeof CommandSchema>;

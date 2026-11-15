@@ -22,6 +22,7 @@ import {
 import type { NetNode, Topology } from "../engine/model";
 import type { Speed } from "../engine/sim/clock";
 import { APP_INFO } from "../engine/sim/demands";
+import { SEVERITY_RANK, advisoryByCve, type Severity } from "../engine/firmware/catalog";
 import type { FlowState, Snapshot, TraceResult } from "../engine/sim/types";
 import { TILE_W, boundsOf, depth, project, rectCorners, tileCentre, type Pt } from "./geometry";
 import { cumulative, pointAlong, routeLinks, type LinkRoute } from "./routing";
@@ -77,6 +78,8 @@ interface NodeView {
   /** Group nodes only: ghost copies behind the icon (far) and a small crowd (near). */
   stack: Container | null;
   cluster: Container | null;
+  /** Risk lens ring (worst known vulnerability). */
+  risk: SmoothGraphics;
 }
 
 interface ZoneTag {
@@ -97,6 +100,16 @@ interface Stream {
 }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const RISK_COLORS: Record<Severity, number> = { critical: 0xff3b30, high: 0xff9f0a, medium: 0xffcc00, low: 0x8e8e93 };
+
+/**
+ * Scale a sprite uniformly so its longest side is `size`. Device artwork can have any aspect
+ * ratio (custom images included), so it is never stretched to a square.
+ */
+function fitSprite(s: Sprite, size: number): void {
+  const t = s.texture;
+  s.scale.set(size / Math.max(t.width, t.height, 1));
+}
 
 export class NetworkScene {
   private app = new Application();
@@ -114,6 +127,7 @@ export class NetworkScene {
   private linkHiG = new SmoothGraphics();
   private traceG = new SmoothGraphics();
   private traceResult: TraceResult | null = null;
+  private riskLens = false;
   private particles = new ParticleContainer({ dynamicProperties: { position: true, color: true } });
   private nodeLayer = new Container({ sortableChildren: true });
   private labelLayer = new Container();
@@ -225,6 +239,13 @@ export class NetworkScene {
   setTrace(result: TraceResult | null): void {
     this.traceResult = result;
     this.refreshFocus();
+  }
+
+  /** Risk lens: ring each device in the colour of its worst known vulnerability. */
+  setRiskLens(on: boolean): void {
+    if (on === this.riskLens) return;
+    this.riskLens = on;
+    this.updateNodes();
   }
 
   setClock(speed: Speed, running: boolean): void {
@@ -420,7 +441,7 @@ export class NetworkScene {
     const body = new Container();
     const sprite = new Sprite(texture);
     sprite.anchor.set(0.5, 0.94);
-    sprite.setSize(art.size);
+    fitSprite(sprite, art.size);
     sprite.eventMode = "static";
     sprite.cursor = "pointer";
     sprite.on("pointerover", () => !this.drag && this.events.onHover(n.id));
@@ -442,7 +463,7 @@ export class NetworkScene {
       for (const [dx, dy, a] of [[12, -9, 0.35], [6, -4.5, 0.6]] as const) {
         const ghost = new Sprite(texture);
         ghost.anchor.set(0.5, 0.94);
-        ghost.setSize(art.size * 0.94);
+        fitSprite(ghost, art.size * 0.94);
         ghost.position.set(dx, dy);
         ghost.alpha = a;
         stack.addChild(ghost);
@@ -452,7 +473,7 @@ export class NetworkScene {
       for (const [dx, dy] of spots.slice(0, Math.min(5, n.count))) {
         const s = new Sprite(texture);
         s.anchor.set(0.5, 0.94);
-        s.setSize(art.size * 0.58);
+        fitSprite(s, art.size * 0.58);
         s.position.set(dx, dy);
         cluster.addChild(s);
       }
@@ -462,7 +483,9 @@ export class NetworkScene {
     if (badge) badge.position.set(-art.size * 0.36, -art.size * 0.86);
     body.addChild(...[stack, sprite, cluster, dot, badge].filter((x): x is Container => x !== null));
 
-    root.addChild(ring, shadow, body);
+    const risk = new SmoothGraphics();
+    risk.visible = false;
+    root.addChild(risk, ring, shadow, body);
     this.nodeLayer.addChild(root);
 
     const label = this.makeLabel(n.label);
@@ -470,7 +493,7 @@ export class NetworkScene {
     this.labelLayer.addChild(label);
 
     this.views.set(n.id, {
-      node: n, root, body, sprite, dot, shadow, ring, label, stack, cluster,
+      node: n, root, body, sprite, dot, shadow, ring, label, stack, cluster, risk,
       lift: 0, ringAlpha: 0, alpha: 1, statusAlpha: 1,
     });
   }
@@ -481,10 +504,23 @@ export class NetworkScene {
     for (const [id, v] of this.views) {
       const s = nodes[id];
       if (!s) continue;
-      const color = s.isolated ? COLORS.ink3 : s.status === "online" ? null : STATUS_COLORS[s.status];
+      const device = this.snap?.devices?.[id];
+      const updating = device?.condition === "updating";
+      const color = s.isolated ? COLORS.ink3 : updating ? COLORS.accent : s.status === "online" ? null : STATUS_COLORS[s.status];
       v.dot.visible = color !== null;
       if (color !== null) v.dot.clear().circle(0, 0, 5.5).fill(0xffffff).circle(0, 0, 4).fill(color);
-      v.statusAlpha = s.status === "offline" ? 0.38 : 1;
+      v.statusAlpha = updating ? 0.6 : s.status === "offline" ? 0.38 : 1;
+      // Risk lens.
+      let worst: Severity | null = null;
+      for (const cve of device?.advisories ?? []) {
+        const a = advisoryByCve(cve);
+        if (a && (!worst || SEVERITY_RANK[a.severity] > SEVERITY_RANK[worst])) worst = a.severity;
+      }
+      v.risk.visible = this.riskLens && worst !== null;
+      if (v.risk.visible) {
+        const c = RISK_COLORS[worst!];
+        v.risk.clear().ellipse(0, 0, 40, 20).fill({ color: c, alpha: 0.14 }).ellipse(0, 0, 40, 20).stroke({ width: 2, color: c, alpha: 0.9 });
+      }
     }
   }
 

@@ -10,6 +10,7 @@
  *  4. Lay zones out in columns and devices on alternate tiles, leaving cable corridors.
  */
 import type { Budget, LinkMedium, NodeKind, TopologyInput, ZoneKind } from "../model";
+import { firmwareFor } from "../firmware/catalog";
 import { mulberry32, type Rng } from "../sim/rng";
 import { BusinessSpecSchema, INDUSTRY_INFO, type BusinessSpec } from "./spec";
 
@@ -134,7 +135,7 @@ class Draft {
   private ids = new Set<string>();
   private hostIp = new Map<string, number>();
 
-  constructor(readonly r: Rng) {}
+  constructor(readonly r: Rng, readonly budget: Budget = "standard") {}
 
   zone(key: string, name: string, kind: ZoneKind, site: string): ZoneDraft {
     const z: ZoneDraft = { id: this.uid(`z-${key}`), name, kind, site, nodes: [] };
@@ -144,7 +145,7 @@ class Draft {
 
   node(z: ZoneDraft, key: string, n: Omit<NodeDraft, "id">): string {
     const id = this.uid(key);
-    z.nodes.push({ id, ...n, firmware: n.firmware ?? FIRMWARE[n.kind] });
+    z.nodes.push({ id, ...n, firmware: n.firmware ?? firmwareFor(n.kind, this.budget) ?? FIRMWARE[n.kind] });
     return id;
   }
 
@@ -254,7 +255,7 @@ function addSet(c: Ctx, z: ZoneDraft, o: SetOptions): string[] {
 export function generateBusiness(input: BusinessSpec): TopologyInput {
   const spec = BusinessSpecSchema.parse(input);
   const r = mulberry32(spec.seed);
-  const d = new Draft(r);
+  const d = new Draft(r, spec.budget);
   const cloud = spec.hosting === "cloud-first";
   const comp = new Set(spec.compliance);
   const hygiene = comp.has("iso27001") || comp.has("cyber-essentials");

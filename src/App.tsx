@@ -4,6 +4,7 @@ import { COMPLIANCE_INFO } from "./engine/gen/spec";
 import { bootSimulation, useApp } from "./state/store";
 import { Inspector, Sidebar } from "./ui/panels";
 import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-panels";
+import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
 import { Wizard } from "./ui/wizard";
 
@@ -40,6 +41,7 @@ export function App() {
       <ActivityFeed left={SIDEBAR_W + 24} right={72} />
       <ErrorToast />
       <PolicySheet />
+      <VulnerabilitiesSheet />
       <Wizard />
     </div>
   );
@@ -50,6 +52,8 @@ function TopBar() {
   const openWizard = useApp((s) => s.setWizardOpen);
   const startTrace = useApp((s) => s.startTrace);
   const setPolicyOpen = useApp((s) => s.setPolicyOpen);
+  const setVulnsOpen = useApp((s) => s.setVulnsOpen);
+  const exposed = useExposedCount();
   const profile = meta.profile;
   return (
     <header className="glass pointer-events-auto absolute top-3 left-3 right-3 flex h-12 items-center gap-3 rounded-[14px] px-4">
@@ -88,10 +92,17 @@ function TopBar() {
       >
         Policy
       </button>
+      <button
+        onClick={() => setVulnsOpen(true)}
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+      >
+        Vulnerabilities
+        {exposed > 0 && <span className="rounded-full bg-bad px-1.5 text-[10px] font-bold text-white tabular-nums">{exposed}</span>}
+      </button>
       <div className="ml-auto flex items-center gap-3">
         <SimControls />
         <span className="hidden rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 xl:inline">
-          Phase 4 · Policy & trace
+          Phase 5 · Lifecycle & firmware
         </span>
       </div>
     </header>

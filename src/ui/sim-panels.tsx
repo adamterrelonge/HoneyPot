@@ -8,6 +8,7 @@ import { APP_INFO, appLabel } from "../engine/sim/demands";
 import { APP_IDS, type FlowStatus, type Severity } from "../engine/sim/types";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { FailuresToggle } from "./lifecycle-panels";
 
 export const FLOW_STATUS: Record<FlowStatus, { label: string; dot: string; pill: string }> = {
   ok: { label: "Healthy", dot: "bg-ok", pill: "bg-ok/12 text-[#248a3d]" },
@@ -162,6 +163,7 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
             </div>
           </>
         )}
+        <FailuresToggle />
       </div>
     </aside>
   );
