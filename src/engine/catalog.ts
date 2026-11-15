@@ -30,6 +30,8 @@ export const NODE_CATALOG: Record<NodeKind, KindInfo> = {
   vpn: { label: "VPN Gateway", category: "security", description: "Terminates remote-access and site-to-site tunnels." },
   honeypot: { label: "Honeypot", category: "security", description: "Decoy that alerts on any interaction." },
   user: { label: "User", category: "endpoint", description: "A member of staff." },
+  plc: { label: "Controller (PLC)", category: "iot", description: "Industrial controller running a production line. Rarely patched; downtime stops output." },
+  medical: { label: "Medical Device", category: "iot", description: "Networked clinical equipment (imaging, monitors). Vendor-locked, long-lived." },
 };
 
 export const ZONE_LABELS: Record<ZoneKind, string> = {
@@ -40,6 +42,9 @@ export const ZONE_LABELS: Record<ZoneKind, string> = {
   branch: "Branch",
   cloud: "Cloud",
   guest: "Guest",
+  factory: "Factory Floor",
+  clinical: "Clinical",
+  secure: "Payments (PCI)",
 };
 
 export const MEDIUM_LABELS: Record<LinkMedium, string> = {

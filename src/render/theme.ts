@@ -1,5 +1,6 @@
 /** Visual tokens for the canvas (mirrors CSS tokens in styles.css; see build.md §4). */
 import type { LinkMedium, NodeKind, NodeStatus, ZoneKind } from "../engine/model";
+import type { AppCategory } from "../engine/sim/types";
 
 export const FONT_STACK = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", system-ui, sans-serif';
 
@@ -29,6 +30,9 @@ export const ZONE_STYLE: Record<ZoneKind, { top: number; side: number; edge: num
   branch: { top: 0xfbf6ea, side: 0xefe5cc, edge: 0xdfcfa6 },
   cloud: { top: 0xedf8fd, side: 0xd5ecf6, edge: 0xb0daec },
   guest: { top: 0xf6f6f8, side: 0xe6e6ea, edge: 0xcfcfd6 },
+  factory: { top: 0xf1f3f6, side: 0xdde1e8, edge: 0xbcc4d1 },
+  clinical: { top: 0xfdf0f3, side: 0xf5dbe1, edge: 0xebbcc7 },
+  secure: { top: 0xfff8e6, side: 0xf6e9c4, edge: 0xe8d18e },
 };
 
 export const MEDIUM_STYLE: Record<LinkMedium, { width: number; dashed: boolean }> = {
@@ -61,9 +65,16 @@ export const NODE_ART: Record<NodeKind, { file: string; size: number; glyph: str
   vpn: { file: "vpn", size: 54, glyph: "🔐" },
   honeypot: { file: "honeypot", size: 54, glyph: "🍯" },
   user: { file: "user", size: 52, glyph: "🧑‍💼" },
+  plc: { file: "plc", size: 50, glyph: "⚙️" },
+  medical: { file: "medical", size: 52, glyph: "🩻" },
 };
 
 export const emojiUrl = (kind: NodeKind) => `/emoji/${NODE_ART[kind].file}.png`;
 
-/** Links attach this far above the tile centre so cables appear to plug into the device base. */
-export const LINK_ANCHOR_LIFT = 10;
+/** Traffic particle colours by application category (see engine/sim/demands.ts). */
+export const CATEGORY_COLORS: Record<AppCategory, number> = {
+  work: 0x0071e3,
+  external: 0x5856d6,
+  voice: 0x34c759,
+  system: 0x30b0c7,
+};

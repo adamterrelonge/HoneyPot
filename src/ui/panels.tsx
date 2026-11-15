@@ -2,8 +2,12 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MEDIUM_LABELS, NODE_CATALOG, formatBandwidth } from "../engine/catalog";
 import { neighbours } from "../engine/graph";
 import type { NetNode, NodeStatus } from "../engine/model";
+import { appLabel } from "../engine/sim/demands";
+import type { NodeSim } from "../engine/sim/types";
 import { emojiUrl } from "../render/theme";
+import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { FLOW_STATUS, UtilBar, formatRate } from "./sim-panels";
 
 const STATUS_TEXT: Record<NodeStatus, { label: string; cls: string }> = {
   online: { label: "Online", cls: "bg-ok/12 text-[#248a3d]" },
@@ -11,6 +15,14 @@ const STATUS_TEXT: Record<NodeStatus, { label: string; cls: string }> = {
   offline: { label: "Offline", cls: "bg-bad/12 text-[#d70015]" },
   compromised: { label: "Compromised", cls: "bg-pwned/12 text-[#8944ab]" },
 };
+
+/** Devices outside the business can't be powered off or isolated (mirrors the engine rule). */
+const EXTERNAL_KINDS = new Set<NetNode["kind"]>(["internet", "cloud"]);
+
+/** Live status for a node (undefined before the first snapshot). */
+function useNodeSim(id: string | null | undefined): NodeSim | undefined {
+  return useSim((s) => (id ? s.snap?.nodes[id] : undefined));
+}
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
@@ -20,6 +32,14 @@ export function Sidebar({ width }: { width: number }) {
   const select = useApp((s) => s.select);
   const hover = useApp((s) => s.hover);
   const [query, setQuery] = useState("");
+  // Re-render only when some device's status actually changes (snapshots arrive at ~10 Hz).
+  const statusKey = useSim((s) => {
+    const nodes = s.snap?.nodes;
+    if (!nodes) return "";
+    return topology.nodes.map((n) => (nodes[n.id] ? `${nodes[n.id]!.status[0]}${+nodes[n.id]!.isolated}` : "-")).join("");
+  });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const live = useMemo(() => useSim.getState().snap?.nodes, [statusKey]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -40,7 +60,7 @@ export function Sidebar({ width }: { width: number }) {
         <div className="flex items-baseline justify-between">
           <h2 className="text-[15px] font-semibold">Network</h2>
           <span className="text-[11px] text-ink-3">
-            {topology.nodes.length} devices · {topology.links.length} links
+            {topology.nodes.reduce((s, n) => s + (n.kind === "internet" ? 0 : n.count), 0).toLocaleString()} devices · {topology.nodes.length} on map
           </span>
         </div>
         <input
@@ -72,7 +92,16 @@ export function Sidebar({ width }: { width: number }) {
                     {n.ip ?? NODE_CATALOG[n.kind].label}
                   </span>
                 </span>
-                <StatusDot status={n.status} />
+                {n.count > 1 && (
+                  <span
+                    className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
+                      selectedId === n.id ? "bg-white/25 text-white" : "bg-black/[0.06] text-ink-2"
+                    }`}
+                  >
+                    {n.count.toLocaleString()}
+                  </span>
+                )}
+                <StatusDot status={live?.[n.id]?.status ?? n.status} isolated={live?.[n.id]?.isolated} />
               </button>
             ))}
           </section>
@@ -83,9 +112,16 @@ export function Sidebar({ width }: { width: number }) {
   );
 }
 
-function StatusDot({ status }: { status: NodeStatus }) {
-  const color = { online: "bg-ok", degraded: "bg-warn", offline: "bg-bad", compromised: "bg-pwned" }[status];
-  return <span className={`h-2 w-2 shrink-0 rounded-full ${color} ring-2 ring-white/80`} aria-label={status} />;
+function StatusDot({ status, isolated }: { status: NodeStatus; isolated?: boolean }) {
+  const color = isolated
+    ? "bg-ink-3"
+    : { online: "bg-ok", degraded: "bg-warn", offline: "bg-bad", compromised: "bg-pwned" }[status];
+  return (
+    <span
+      className={`h-2 w-2 shrink-0 rounded-full ${color} ring-2 ring-white/80`}
+      aria-label={isolated ? "isolated" : status}
+    />
+  );
 }
 
 // ── Inspector ────────────────────────────────────────────────────────────────
@@ -100,11 +136,16 @@ export function Inspector({ width }: { width: number }) {
   const last = useRef<NetNode | null>(null);
   const current = selectedId ? (topology.nodes.find((n) => n.id === selectedId) ?? null) : null;
   if (current) last.current = current;
+  // The remembered node must belong to the business on screen (a new business may have loaded).
+  if (last.current && !graph.hasNode(last.current.id)) last.current = null;
   const node = current ?? last.current;
   const open = current !== null;
 
+  const live = useNodeSim(node?.id);
   const links = useMemo(() => (node ? neighbours(graph, node.id) : []), [graph, node]);
   const zone = node ? topology.zones.find((z) => z.id === node.zoneId) : undefined;
+  const status = live?.status ?? node?.status ?? "online";
+  const pill = live?.isolated ? "Isolated" : live && !live.powered ? "Powered off" : STATUS_TEXT[status].label;
 
   return (
     <aside
@@ -116,7 +157,7 @@ export function Inspector({ width }: { width: number }) {
     >
       {node && (
         <>
-          <div className="relative flex flex-col items-center px-5 pt-6 pb-4 text-center">
+          <div className="relative flex flex-col items-center px-5 pt-6 pb-3 text-center">
             <button
               onClick={() => select(null)}
               aria-label="Close inspector"
@@ -124,23 +165,60 @@ export function Inspector({ width }: { width: number }) {
             >
               ✕
             </button>
-            <div className="flex h-24 w-24 items-center justify-center rounded-[26px] bg-gradient-to-b from-white to-[#f0f0f3] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08),0_6px_20px_rgba(0,0,0,0.06)]">
-              <img src={emojiUrl(node.kind)} alt="" className="h-16 w-16" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-gradient-to-b from-white to-[#f0f0f3] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08),0_6px_20px_rgba(0,0,0,0.06)]">
+              <img
+                src={emojiUrl(node.kind)}
+                alt=""
+                className={`h-14 w-14 transition-opacity ${status === "offline" ? "opacity-40 grayscale" : ""}`}
+              />
             </div>
             <h2 className="mt-3 text-[20px] font-semibold tracking-tight">{node.label}</h2>
             <p className="text-[13px] text-ink-3">
               {NODE_CATALOG[node.kind].label} · {zone?.name}
             </p>
-            <span className={`mt-2 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_TEXT[node.status].cls}`}>
-              {STATUS_TEXT[node.status].label}
-            </span>
+            <div className="mt-2 flex gap-1.5">
+              <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_TEXT[status].cls}`}>{pill}</span>
+              {node.count > 1 && (
+                <span className="rounded-full bg-black/[0.05] px-2.5 py-0.5 text-[11px] font-semibold text-ink-2">
+                  Group of {node.count.toLocaleString()}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
+            {live && live.reasons.length > 0 && (
+              <div className="mb-3 rounded-[12px] bg-warn/10 px-3 py-2 shadow-[inset_0_0_0_0.5px_rgba(255,159,10,0.35)]">
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#c93400]">Why</h3>
+                <ul className="mt-1 space-y-0.5">
+                  {live.reasons.map((r) => (
+                    <li key={r} className="text-[12px] leading-snug text-ink">
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <Actions node={node} live={live} />
+            <LiveTraffic nodeId={node.id} />
+
+            <Section title={`Connections (${links.length})`}>
+              {links.map(({ node: other, link }) => (
+                <ConnectionRow
+                  key={link.id}
+                  other={other}
+                  linkId={link.id}
+                  meta={`${MEDIUM_LABELS[link.medium]} · ${formatBandwidth(link.bandwidthMbps)}`}
+                />
+              ))}
+            </Section>
+
             <p className="mb-3 px-1 text-[12px] leading-snug text-ink-2">{NODE_CATALOG[node.kind].description}</p>
 
             <Section title="Details">
-              <Row k="IP address" v={node.ip ?? "—"} mono />
+              {node.count > 1 && <Row k="Devices" v={node.count.toLocaleString()} />}
+              {node.subnet ? <Row k="Subnet" v={node.subnet} mono /> : <Row k="IP address" v={node.ip ?? "—"} mono />}
               <Row k="VLAN" v={node.vlan?.toString() ?? "—"} />
               {node.os && <Row k="Operating system" v={node.os} />}
               {node.firmware && <Row k="Firmware" v={`${node.firmware.vendor} ${node.firmware.version}`} />}
@@ -162,26 +240,127 @@ export function Inspector({ width }: { width: number }) {
                 </div>
               </Section>
             )}
-
-            <Section title={`Connections (${links.length})`}>
-              {links.map(({ node: other, link }) => (
-                <button
-                  key={link.id}
-                  onClick={() => select(other.id, { focus: true })}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-black/[0.03]"
-                >
-                  <img src={emojiUrl(other.kind)} alt="" className="h-5 w-5" />
-                  <span className="flex-1 truncate text-[13px]">{other.label}</span>
-                  <span className="text-[11px] text-ink-3">
-                    {MEDIUM_LABELS[link.medium]} · {formatBandwidth(link.bandwidthMbps)}
-                  </span>
-                </button>
-              ))}
-            </Section>
           </div>
         </>
       )}
     </aside>
+  );
+}
+
+function Actions({ node, live }: { node: NetNode; live: NodeSim | undefined }) {
+  if (EXTERNAL_KINDS.has(node.kind)) {
+    return (
+      <p className="mb-3 rounded-[12px] bg-black/[0.035] px-3 py-2 text-[12px] leading-snug text-ink-2">
+        {node.label} is outside the business. Disable its link below to simulate an outage.
+      </p>
+    );
+  }
+  const powered = live?.powered ?? true;
+  const isolated = live?.isolated ?? false;
+  const btn =
+    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)]";
+  return (
+    <div className="mb-3 flex gap-2">
+      <button
+        className={`${btn} ${powered ? "bg-white/80 text-[#d70015] hover:bg-white" : "bg-accent text-white hover:bg-[#0077ed]"}`}
+        onClick={() => void sim.dispatch({ type: "node.setPower", nodeId: node.id, on: !powered })}
+      >
+        {powered ? "Power off" : "Power on"}
+      </button>
+      <button
+        className={`${btn} ${isolated ? "bg-accent text-white hover:bg-[#0077ed]" : "bg-white/80 text-ink hover:bg-white"}`}
+        disabled={!powered}
+        onClick={() => void sim.dispatch({ type: "node.setIsolated", nodeId: node.id, isolated: !isolated })}
+      >
+        {isolated ? "Reconnect" : "Isolate"}
+      </button>
+    </div>
+  );
+}
+
+function LiveTraffic({ nodeId }: { nodeId: string }) {
+  const flows = useSim((s) => s.snap?.flows);
+  const topology = useApp((s) => s.topology);
+  const label = (id: string) => topology.nodes.find((n) => n.id === id)?.label ?? id;
+  const mine = (flows ?? [])
+    .filter((f) => f.status !== "idle" && (f.client === nodeId || f.server === nodeId || f.via === nodeId))
+    .sort((a, b) => b.throughputMbps - a.throughputMbps || a.id.localeCompare(b.id));
+  if (!mine.length) return null;
+  const shown = mine.slice(0, 6);
+  return (
+    <Section title={`Live traffic (${mine.length})`}>
+      {shown.map((f) => {
+        const peer = f.client === nodeId ? f.server : f.client;
+        const st = FLOW_STATUS[f.status];
+        return (
+          <div key={f.id} className="px-3 py-2">
+            <div className="flex items-center gap-2 text-[12px]">
+              <span className={`h-[7px] w-[7px] shrink-0 rounded-full ${st.dot}`} />
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-medium">{appLabel(f.app, topology)}</span>
+                <span className="text-ink-3"> · {label(peer)}</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-ink-2">
+                {f.status === "down" ? "—" : formatRate(f.throughputMbps)}
+              </span>
+            </div>
+            {f.reason && <p className="mt-0.5 pl-[15px] text-[11px] leading-snug text-ink-3">{f.reason}</p>}
+          </div>
+        );
+      })}
+      {mine.length > shown.length && (
+        <p className="px-3 py-1.5 text-[11px] text-ink-3">and {mine.length - shown.length} more</p>
+      )}
+    </Section>
+  );
+}
+
+function ConnectionRow({ other, linkId, meta }: { other: NetNode; linkId: string; meta: string }) {
+  const select = useApp((s) => s.select);
+  const link = useSim((s) => s.snap?.links[linkId]);
+  const up = link?.state !== "down";
+  return (
+    <div className="flex items-center gap-2.5 px-3 py-2">
+      <button
+        onClick={() => select(other.id, { focus: true })}
+        className="flex min-w-0 flex-1 items-center gap-2.5 text-left hover:opacity-75"
+      >
+        <img src={emojiUrl(other.kind)} alt="" className="h-5 w-5" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px]">{other.label}</span>
+          <span className="block truncate text-[11px] text-ink-3">
+            {meta}
+            {link && link.state === "up" && link.util > 0.001 ? ` · ${Math.round(link.util * 100)}%` : ""}
+            {link?.state === "blocked" ? " · blocked" : ""}
+          </span>
+          {link && link.state === "up" && <UtilBar util={link.util} />}
+        </span>
+      </button>
+      <Toggle
+        on={up}
+        label={`${up ? "Disable" : "Enable"} link to ${other.label}`}
+        onChange={(on) => void sim.dispatch({ type: "link.setStatus", linkId, status: on ? "up" : "down" })}
+      />
+    </div>
+  );
+}
+
+function Toggle({ on, onChange, label }: { on: boolean; onChange: (on: boolean) => void; label: string }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      title={label}
+      onClick={() => onChange(!on)}
+      className={`relative h-[18px] w-[30px] shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-ok" : "bg-black/15"}`}
+    >
+      <span
+        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] duration-200 ${
+          on ? "left-[14px]" : "left-[2px]"
+        }`}
+      />
+    </button>
   );
 }
 

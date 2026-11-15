@@ -29,7 +29,8 @@ sends network traffic beyond loading its own assets.
    DOM. This is enforced by `tsconfig.engine.json` (no `DOM` lib). From Phase 2 the engine runs
    in a Web Worker.
 2. **Simulation state never lives in React state.** React holds UI state only (selection, panels,
-   tool mode). The renderer reads engine snapshots directly.
+   tool mode). The worker pushes read-only snapshots into `useSim` (`src/state/sim.ts`); the
+   renderer subscribes outside React and components read them through narrow selectors.
 3. **Every mutation is a Command** (from Phase 2), e.g. `{ type: "link.setStatus", linkId, status, t }`.
    The command log enables undo, replay, after-action reports and shareable scenarios.
 4. **Determinism.** All randomness goes through a seeded RNG. The same seed plus the same
@@ -57,7 +58,7 @@ sends network traffic beyond loading its own assets.
 | Styling | **Tailwind CSS 4** + CSS custom properties | Tokens in `src/styles.css`. |
 | Font | System stack → **Inter Variable** fallback | SF Pro can't be redistributed, so Apple devices get it natively. |
 | Tests | **Vitest** (engine and math), Chrome DevTools/Playwright for visual checks | |
-| Worker RPC | Comlink *(Phase 2)* | |
+| Worker RPC | **Comlink 4** | `src/worker/sim.worker.ts` exposes `SimHost`. |
 | Persistence | IndexedDB via Dexie *(Phase 7)* | |
 
 ### Emoji assets
@@ -93,8 +94,16 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
 
 - **Zones** are soft-tinted floor plates (`internet` blue, `edge` peach, `server` lavender,
   `office` mint, `branch` sand, `cloud` sky) with a hairline outline and a small caps label.
-- **Links** are thin grey curves (1.5px, 35% alpha) lifted into an arc like cables. Selection
-  turns them accent blue. Downed links are dashed red.
+- **Links** are 1px hairline cables lying on the floor. They follow the two isometric axes with
+  rounded corners, run in parallel lanes 7px apart, and leave a small gap where one cable crosses
+  another (see §5 "Link routing"). Selection turns them accent blue. Downed links are dashed red,
+  blocked links (isolated endpoint) faint dashed grey, and busy links turn orange (≥80%) or red (≥100%).
+- **Groups** (one node standing for many identical devices) draw as a stacked icon with a dark count
+  pill. Zoomed in (≥105%) the stack fans out into a small crowd. Zoomed out (<55%) device labels fade
+  and each zone shows a screen-aligned tag with its name and device count, but only when the zone is
+  wide enough on screen to hold it.
+- **Traffic** is shown as small dots moving along cables in the bulk direction: blue for staff apps,
+  indigo for external users, green for voice, teal for system traffic (backup, CCTV) and orange when degraded.
 - **Motion.** Ease-out curves of 150–250ms. Nodes lift slightly on hover. No bouncy springs.
 
 ---
@@ -115,13 +124,19 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
 ### Directory layout
 ```
 src/
-  engine/        pure TS: types, schema, catalog, graph, (sim/, policy/, incidents/ later)
-  render/        iso.ts + curves.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
-  state/         store.ts (Zustand, UI state only)
-  ui/            React components (glass panels)
+  engine/        pure TS: model (schema), catalog, graph, stress (synthetic topology)
+    sim/         rng, clock, commands, demands, simulation, types   (policy/, incidents/ later)
+    gen/         spec (BusinessSpec + wizard metadata), generate (templates → TopologyInput)
+  worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
+  render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
+  state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade)
+  ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
+
+Dev URL flag: `?stress=200` loads the synthetic 200-node topology. In dev,
+`window.__honeypotScene.stats()` reports node, link, stream and particle counts.
 
 ### Isometric maths
 - Tile size: `TILE_W = 96`, `TILE_H = 48` (2:1 dimetric).
@@ -130,10 +145,23 @@ public/emoji/    Fluent 3D emoji PNGs (MIT)
 - Grid +x runs to the lower right on screen, +y to the lower left. Traffic generally flows
   "top" (Internet, small x+y) to "bottom" (office, large x+y).
 
-### Link curves
-Cubic Bézier between the two node anchor points. Both control points are lifted vertically by
-`lift = clamp(dist·0.22, 14, 90)` px so links read as cables arching between devices. Particles
-and hit-testing sample the same curve (`curves.ts`).
+### Link routing (`render/routing.ts`)
+Cables lie on the floor and follow the grid axes. The router is pure and deterministic and runs once per topology.
+1. **Route:** A* over tiles (4-neighbour). Costs: step 1, turn +2, a segment already used by another
+   cable +0.4 per cable, a tile next to a device +0.3. Other devices' tiles are obstacles. Longest
+   links are routed first.
+2. **Lanes:** each straight run ("leg") on the same grid line that overlaps or touches another leg
+   forms a bundle. Every leg gets its own lane, `LANE_PX = 7` apart and centred on the line. The order
+   is chosen so the cable that turns off first sits on the side it turns towards. Ties are broken from
+   the neighbouring legs' lanes so bundles keep their order through corners. Cables therefore plug into
+   a device side by side, `PORT_INSET = 0.32` tiles from its centre, never into one shared point.
+3. **Corners:** quarter circles on the floor (ellipses on screen), `CORNER_RADIUS = 0.34` tiles,
+   adjusted per lane so bundles turn concentrically.
+4. **Crossings:** where perpendicular legs of different cables cross, the lower-priority cable
+   (wan > fibre > copper > vpn > wifi, then routing order) gets a ±4.5px gap.
+
+Particles sample the same polylines (`pointAlong`). A flow's particle path is its links' routes
+chained in path order, reversed for downloads.
 
 ---
 
@@ -142,17 +170,82 @@ and hit-testing sample the same curve (`curves.ts`).
 ```ts
 NodeKind = internet | isp | router | firewall | switch | wifi | server | database | nas
          | desktop | laptop | phone | printer | cloud | camera | voip | pos | vpn | honeypot | user
-ZoneKind = internet | edge | server | office | branch | cloud | guest
-NetNode  { id, kind, label, zoneId, pos{x,y}, ip?, vlan?, os?, firmware?{vendor,version},
-           status: online|offline|degraded|compromised, services[], tags[] }
-Link     { id, a, b, medium: fiber|copper|wifi|wan|vpn, bandwidthMbps, latencyMs, status: up|down }
-Zone     { id, name, kind, origin{x,y}, size{w,h} }
-Topology { meta{ name, industry, size: sme|mid|enterprise, employees, seed }, zones[], nodes[], links[] }
+         | plc | medical                                                    (Phase 3)
+ZoneKind = internet | edge | server | office | branch | cloud | guest | factory | clinical | secure
+NetNode  { id, kind, label, zoneId, pos{x,y}, ip?, subnet?, vlan?, os?, firmware?{vendor,version},
+           status: online|offline|degraded|compromised, services[], tags[], count = 1 }
+Link     { id, a, b, medium: fiber|copper|wifi|wan|vpn, bandwidthMbps, latencyMs, status: up|down,
+           dependsOn: linkId[] = [] }            // overlay (VPN tunnel) riding on these links, a → b
+Zone     { id, name, kind, origin{x,y}, size{w,h}, site = "hq" }
+Topology { meta{ name, industry, size, employees, seed,
+                 profile?{ industry, budget, hosting, compliance[], sites } }, zones[], nodes[], links[] }
 ```
 Topology invariants (enforced by `TopologySchema`): unique ids; links reference existing nodes;
-no self-links or duplicate links; each node lies inside its zone; at most one node per tile.
+no self-links or duplicate links; each node lies inside its zone; at most one node per tile;
+an overlay's `dependsOn` is an existing chain of physical links walking from `a` to `b`.
 
-**Planned additions:** Phase 2 `Service`, `Flow`, `Command`. Phase 4 `Subnet`, `Vlan`,
+**Groups:** a node with `count > 1` stands for that many identical devices. Demand scales with
+`count`, health counts users (not flows), and jitter and bursts shrink by `1/√count` because big
+groups average out. The generator groups a set of identical computers, cameras or controllers only
+when a zone has **more than 12** of them; handsets, mobiles, guest devices and AP sets are always one
+node.
+
+**Phase 2 additions** (`engine/sim/types.ts`):
+```ts
+Command  = link.setStatus{linkId,status} | node.setPower{nodeId,on} | node.setIsolated{nodeId,isolated}
+Demand   { id, app, client, server, via?, bulk: toClient|toServer|both, baseMbps, schedule, needs[dns|directory],
+           latencyBudgetMs, lossBudget }            // derived from node kinds + hosted services
+FlowState{ …Demand, status: idle|ok|degraded|down, reason?, demandMbps, throughputMbps, latencyMs, loss, path }
+NodeSim  { status, powered, isolated, reasons[] }   LinkSim { state: up|down|blocked, util, loadAB, loadBA }
+AppHealth{ app, status, total, ok, degraded, down, reason? }   SimEvent { seq, tick, minute, severity, text, subject? }
+Snapshot { seed, tick, minute, nodes, links, flows, apps, events, hash }
+```
+- **Time:** 1 tick = 15 simulated seconds. 1× = 4 ticks/s (1 real second = 1 simulated minute). 4× and 16×
+  run more ticks per second, never bigger ticks. Start time is Monday 08:40. The working day ramps up
+  07:30–08:45, dips at lunch 12:00–13:30 and ramps down 17:15–18:30; weekends run at ~3%.
+- **Demand per client at full activity:** desktop/laptop email & docs 1.2, files 1.0, practice DB 0.5,
+  web 0.8, print 0.15 (desktops only) ≈ 3.5 Mbps; phones 1.0. Portal 15 Mbps from the internet; VPN remote
+  users 4 Mbps via the gateway; voice 0.6 Mbps (6 calls) with a 150 ms / 1% loss budget; CCTV 4 Mbps to the
+  NAS 24/7; backups servers → NAS 22:00–01:00, then NAS → cloud 01:00–05:00 at 300 Mbps.
+- **Dependencies:** business apps need DNS, then sign-in (directory), to be reachable. Web and print need DNS only.
+- Internet and cloud nodes are outside the business and can't be powered off or isolated; disable their links instead.
+
+**Phase 3 additions** (`engine/gen/spec.ts`):
+```ts
+BusinessSpec { name, industry: professional|retail|healthcare|manufacturing, size: sme|mid|enterprise,
+               employees, sites, hosting: cloud-first|on-prem, budget: lean|standard|generous,
+               compliance: (gdpr|pci-dss|health-data|iso27001|cyber-essentials)[], seed }
+```
+| Size | Staff | Sites |
+|---|---|---|
+| SME | 10–50 | 1–2 |
+| Mid | 50–250 | 2–3 |
+| Enterprise | 250–2,000 | 5–8 |
+
+What each choice changes in `generateBusiness`:
+- **Industry:** departments and device mix; line-of-business system name; portal; specials.
+  - Retail: stores as branches, card terminals, shopper Wi-Fi, a "Card Payments" provider.
+  - Healthcare: a clinical zone with an imaging archive and imaging devices, a waiting-room Wi-Fi zone.
+  - Manufacturing: a factory zone with SCADA and PLC lines.
+- **Sites:** HQ takes 60% of staff (retail 20%). Each branch has its own broadband and a VPN tunnel to
+  the HQ VPN gateway that rides branch-broadband → internet → ISP → firewall → gateway. Branch routers
+  forward DNS locally.
+- **Hosting:** cloud-first replaces the DC, file and DB servers with Cloud Identity, Cloud Workspace
+  (files) and a cloud business system, and the firewall serves DNS. On-prem keeps them in the server room.
+- **Budget:**
+  - Headroom ×1.25 / ×1.7 / ×2.5 on every link, rounded up to a real tier (20 Mbps … 100 Gbps).
+  - End-of-life OS rate 25% / 10% / 3%; default-credential cameras 60% / 30% / 10%.
+  - Lean: copper 1 G core and no offsite backup. Generous: backup ISP and a private WAN link per branch.
+- **Compliance:**
+  - PCI DSS: card terminals go in their own "Payments (PCI)" zone on VLAN 70 (otherwise tagged `flat-network`).
+  - Health data: clinical VLAN 100.
+  - ISO 27001: OT VLAN 80.
+  - ISO 27001 or Cyber Essentials: EOL rate ×0.3 and no default credentials.
+  - Policy enforcement itself is Phase 4.
+- **Layout:** columns Internet | Edge | HQ zones | branch zones, each wrapping at 34 tiles. Devices sit on
+  alternate tiles inside a zone, so cables always have corridors.
+
+**Planned additions:** Phase 4 `Subnet`, `Vlan`,
 `FirewallRule`, `Identity`, `Group`, `Permission`. Phase 5 `FirmwareRelease`, `Vulnerability`.
 Phase 6 `Incident`, `Scenario`, `Objective`.
 
@@ -162,7 +255,12 @@ Phase 6 `Incident`, `Scenario`, `Objective`.
 
 | Area | Simulated | Abstracted away |
 |---|---|---|
-| Traffic | flows per service pair: demand Mbps, utilisation, latency, loss | packets, TCP behaviour, MTU |
+| Traffic | flows per service pair: demand Mbps, utilisation, latency, loss. Bulk/ack split 85/15 per direction; full-duplex links; oversubscribed links scale flows proportionally (no max-min fairness); queueing delay 2u/(1−u) ms capped at 150, 150–250 ms when full; "loss" = undelivered share | packets, TCP behaviour, MTU, Wi-Fi airtime sharing |
+| Routing | shortest path (latency + 0.05 per hop); only forwarding kinds (internet, isp, router, firewall, switch, wifi) carry transit; paths recomputed only after a command | routing protocols, ECMP, asymmetric routes |
+| Dependencies | DNS → sign-in → app, checked as reachability to **any** host offering the service | caching, DHCP leases, Kerberos tickets |
+| Edge / NAT | stateful-edge rule: once a path has crossed the internet it may not enter a private zone (anything but internet/edge/cloud). Inbound only via a VPN gateway (`via`) or a tunnel | firewall rule sets (Phase 4) |
+| WAN | site-to-site VPN = overlay link whose traffic also loads (and whose health depends on) its underlay chain; private WAN = plain link | tunnel failover across ISPs, IPsec overheads, MTU |
+| Groups | one node = N identical devices: demand × N, users counted N, jitter/bursts ÷ √N; Wi-Fi APs grouped and sized at ~30 clients each | per-device state inside a group (Phase 4+ may split groups) |
 | L2 | VLAN membership, trunk vs access, switch failure | STP, MAC tables, ARP |
 | L3 | subnets, default gateways, static routing between zones, NAT at edge | dynamic routing protocols (BGP/OSPF) except as "ISP up/down" |
 | Policy | ordered firewall rules (src zone/subnet, dst, service, allow/deny), ACLs | stateful inspection internals |
@@ -179,7 +277,7 @@ Phase 6 `Incident`, `Scenario`, `Objective`.
 Each phase lists its **scope** and **acceptance criteria**. A phase is done only when all its
 criteria pass and a diary entry exists.
 
-### Phase 1 — Foundation & visual language
+### Phase 1 — Foundation & visual language ✅
 - Vite/React/TS scaffold, design tokens, glass UI shell (TopBar, Sidebar, Inspector, zoom controls).
 - Engine types, Zod topology schema, node catalogue, graphology builder.
 - Pixi isometric scene: hairline grid, tinted zones and labels, curved links, emoji nodes with
@@ -190,21 +288,25 @@ criteria pass and a diary entry exists.
 - **Done when:** typecheck is clean for app and engine; unit tests pass (iso maths, curves, schema
   invariants, graph); `vite build` succeeds; screenshot reviewed.
 
-### Phase 2 — Simulation core
+### Phase 2 — Simulation core ✅ (2026-11-14)
 - Engine moved into a Web Worker (Comlink). Fixed-tick clock (default 4 Hz) with pause/1×/4×/step.
 - Command bus and command log. Seeded RNG (mulberry32).
 - Services (DNS, DHCP, AD, file, email, web, ERP, backup) hosted on nodes, with dependencies.
 - Flow model: clients' demand → path (graph shortest path) → link utilisation, latency, loss.
 - Node and link up/down actions. Reachability recomputed only on topology or policy changes.
 - Renderer: traffic particles sampled from flows; link colour/width from utilisation; status badges.
+- Floor cable routing with lanes, rounded corners and crossing gaps (§5), replacing Phase 1's arcs.
+- UI: clock and speed controls (Space = pause), business services panel, activity feed, inspector
+  actions (power, isolate, per-link toggles), live traffic and "Why" reasons.
 - **Done when:** deterministic replay test (same seed + commands ⇒ identical snapshot hash); flow
   and reachability unit tests; stays at 60fps with 200 nodes and 2k particles.
 
-### Phase 3 — Business generator & scale
+### Phase 3 — Business generator & scale ✅ (2026-11-14)
 - Onboarding wizard: name, industry, size (SME / mid / enterprise), sites, cloud vs on-prem.
 - Procedural generator from templates producing zones, nodes, links, services and staff.
 - **Group nodes** ("Finance · 40 laptops") with semantic zoom (they expand when zoomed in).
 - Auto-layout into zones on the grid; multi-site WAN links.
+- Budget, compliance and hosting choices in the wizard (decided after Phase 2), plus a live preview.
 - **Done when:** generator property tests pass (all invariants hold for 500 random seeds);
   enterprise template renders smoothly.
 

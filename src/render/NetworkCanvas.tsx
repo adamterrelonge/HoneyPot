@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useSim } from "../state/sim";
 import { useApp } from "../state/store";
 import { NetworkScene, type Insets } from "./scene";
 
@@ -16,6 +17,7 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
     const { select, hover, setZoom, topology } = useApp.getState();
     const scene = new NetworkScene({ onSelect: (id) => select(id), onHover: hover, onZoom: setZoom });
     sceneRef.current = scene;
+    if (import.meta.env.DEV) (window as unknown as { __honeypotScene?: NetworkScene }).__honeypotScene = scene;
     scene.setInsets(insets);
 
     let lastSeq = useApp.getState().cameraRequest?.seq ?? 0;
@@ -32,9 +34,18 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
       }
     });
 
+    // Simulation snapshots and clock state go straight to the scene, bypassing React.
+    const applySim = (s: ReturnType<typeof useSim.getState>) => {
+      scene.setClock(s.speed, s.running);
+      if (s.snap) scene.applySnapshot(s.snap);
+    };
+    applySim(useSim.getState());
+    const unsubSim = useSim.subscribe(applySim);
+
     scene.mount(host, topology).catch((err) => console.error("Scene failed to start", err));
     return () => {
       unsub();
+      unsubSim();
       scene.destroy();
       sceneRef.current = null;
     };

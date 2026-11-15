@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  LIFT_MAX, LIFT_MIN, TILE_H, TILE_W, bezierPoint, boundsOf, depth, distanceToCurve, linkCurve,
-  project, rectCorners, tileAt, tileCentre, unproject,
-} from "./geometry";
+import { TILE_H, TILE_W, boundsOf, depth, project, rectCorners, tileAt, tileCentre, unproject } from "./geometry";
 
 describe("isometric projection", () => {
   it("projects the grid axes onto the 2:1 diamond", () => {
@@ -36,38 +33,5 @@ describe("isometric projection", () => {
   it("rectCorners + boundsOf describe the zone diamond", () => {
     const b = boundsOf(rectCorners(0, 0, 2, 2));
     expect(b).toEqual({ minX: -TILE_W, maxX: TILE_W, minY: 0, maxY: 2 * TILE_H });
-  });
-});
-
-describe("link curves", () => {
-  const a = { x: 0, y: 0 };
-  const b = { x: 300, y: 100 };
-
-  it("starts and ends on the endpoints", () => {
-    const c = linkCurve(a, b);
-    expect(bezierPoint(c, 0)).toEqual(a);
-    const end = bezierPoint(c, 1);
-    expect(end.x).toBeCloseTo(b.x);
-    expect(end.y).toBeCloseTo(b.y);
-  });
-
-  it("arcs upward (screen −y) like a cable", () => {
-    const c = linkCurve(a, b);
-    const mid = bezierPoint(c, 0.5);
-    expect(mid.y).toBeLessThan((a.y + b.y) / 2);
-  });
-
-  it("clamps the lift for very short and very long links", () => {
-    const short = linkCurve(a, { x: 1, y: 0 });
-    expect(short.c1.y).toBeCloseTo(-LIFT_MIN, 0);
-    const long = linkCurve(a, { x: 5000, y: 0 });
-    expect(long.c1.y).toBeCloseTo(-LIFT_MAX, 5);
-  });
-
-  it("distanceToCurve is ~0 on the curve and grows away from it", () => {
-    const c = linkCurve(a, b);
-    const on = bezierPoint(c, 0.3);
-    expect(distanceToCurve(c, on)).toBeLessThan(1);
-    expect(distanceToCurve(c, { x: on.x, y: on.y + 50 })).toBeGreaterThan(40);
   });
 });

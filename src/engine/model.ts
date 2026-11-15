@@ -9,10 +9,13 @@ export const NODE_KINDS = [
   "server", "database", "nas",
   "desktop", "laptop", "phone", "printer",
   "cloud", "camera", "voip", "pos", "vpn", "honeypot", "user",
+  "plc", "medical",
 ] as const;
 export type NodeKind = (typeof NODE_KINDS)[number];
 
-export const ZONE_KINDS = ["internet", "edge", "server", "office", "branch", "cloud", "guest"] as const;
+export const ZONE_KINDS = [
+  "internet", "edge", "server", "office", "branch", "cloud", "guest", "factory", "clinical", "secure",
+] as const;
 export type ZoneKind = (typeof ZONE_KINDS)[number];
 
 export const NODE_STATUSES = ["online", "degraded", "offline", "compromised"] as const;
@@ -22,6 +25,15 @@ export const LINK_MEDIA = ["fiber", "copper", "wifi", "wan", "vpn"] as const;
 export type LinkMedium = (typeof LINK_MEDIA)[number];
 
 export const BUSINESS_SIZES = ["sme", "mid", "enterprise"] as const;
+export type BusinessSize = (typeof BUSINESS_SIZES)[number];
+export const INDUSTRIES = ["professional", "retail", "healthcare", "manufacturing"] as const;
+export type Industry = (typeof INDUSTRIES)[number];
+export const BUDGETS = ["lean", "standard", "generous"] as const;
+export type Budget = (typeof BUDGETS)[number];
+export const HOSTING = ["cloud-first", "on-prem"] as const;
+export type Hosting = (typeof HOSTING)[number];
+export const COMPLIANCE = ["gdpr", "pci-dss", "health-data", "iso27001", "cyber-essentials"] as const;
+export type Compliance = (typeof COMPLIANCE)[number];
 
 const Id = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, "ids must be kebab-case");
 const GridPoint = z.object({ x: z.number().int().nonnegative(), y: z.number().int().nonnegative() });
@@ -32,6 +44,8 @@ export const ZoneSchema = z.object({
   kind: z.enum(ZONE_KINDS),
   origin: GridPoint,
   size: z.object({ w: z.number().int().positive(), h: z.number().int().positive() }),
+  /** Physical site this zone belongs to (multi-site businesses). Defaults to the head office. */
+  site: z.string().default("hq"),
 });
 
 export const NodeSchema = z.object({
@@ -41,12 +55,16 @@ export const NodeSchema = z.object({
   zoneId: Id,
   pos: GridPoint,
   ip: z.ipv4().optional(),
+  /** CIDR for group nodes, e.g. 10.1.30.0/24. */
+  subnet: z.string().regex(/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/, "subnet must be CIDR").optional(),
   vlan: z.number().int().min(1).max(4094).optional(),
   os: z.string().optional(),
   firmware: z.object({ vendor: z.string().min(1), version: z.string().min(1) }).optional(),
   status: z.enum(NODE_STATUSES).default("online"),
   services: z.array(z.string()).default([]),
   tags: z.array(z.string()).default([]),
+  /** A group node stands for this many identical devices (build.md §6, grouping). */
+  count: z.number().int().min(1).default(1),
 });
 
 export const LinkSchema = z.object({
@@ -57,6 +75,11 @@ export const LinkSchema = z.object({
   bandwidthMbps: z.number().positive(),
   latencyMs: z.number().nonnegative(),
   status: z.enum(["up", "down"]).default("up"),
+  /**
+   * Overlay links (VPN tunnels) ride on these physical links, listed in order from `a` to `b`.
+   * The tunnel is only usable while all of them are, and its traffic loads them too.
+   */
+  dependsOn: z.array(Id).default([]),
 });
 
 export const MetaSchema = z.object({
@@ -65,6 +88,16 @@ export const MetaSchema = z.object({
   size: z.enum(BUSINESS_SIZES),
   employees: z.number().int().positive(),
   seed: z.number().int(),
+  /** Present on generated businesses (Phase 3). */
+  profile: z
+    .object({
+      industry: z.enum(INDUSTRIES),
+      budget: z.enum(BUDGETS),
+      hosting: z.enum(HOSTING),
+      compliance: z.array(z.enum(COMPLIANCE)),
+      sites: z.number().int().min(1),
+    })
+    .optional(),
 });
 
 export const TopologySchema = z
@@ -114,6 +147,26 @@ export const TopologySchema = z
       const pair = [l.a, l.b].sort().join("|");
       if (pairs.has(pair)) issue(["links", i], `link "${l.id}" duplicates an existing connection ${pair}`);
       pairs.add(pair);
+    });
+
+    // Overlay links must name an existing chain of links that walks from a to b.
+    const linkById = new Map(t.links.map((l) => [l.id, l]));
+    t.links.forEach((l, i) => {
+      if (!l.dependsOn.length) return;
+      let at = l.a;
+      for (const dep of l.dependsOn) {
+        const d = linkById.get(dep);
+        if (!d || d.dependsOn.length) {
+          issue(["links", i, "dependsOn"], `link "${l.id}" depends on unknown or overlay link "${dep}"`);
+          return;
+        }
+        if (d.a !== at && d.b !== at) {
+          issue(["links", i, "dependsOn"], `link "${l.id}": "${dep}" does not continue the chain from "${at}"`);
+          return;
+        }
+        at = d.a === at ? d.b : d.a;
+      }
+      if (at !== l.b) issue(["links", i, "dependsOn"], `link "${l.id}": dependsOn chain ends at "${at}", not "${l.b}"`);
     });
   });
 
