@@ -4,6 +4,7 @@ import { COMPLIANCE_INFO } from "./engine/gen/spec";
 import { bootSimulation, useApp } from "./state/store";
 import { Inspector, Sidebar } from "./ui/panels";
 import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-panels";
+import { GameHud, IncidentsPanel, PlaySheet, ReportSheet } from "./ui/game-panels";
 import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
 import { Wizard } from "./ui/wizard";
@@ -15,6 +16,7 @@ export function App() {
   const selectedId = useApp((s) => s.selectedId);
   const select = useApp((s) => s.select);
   const tracing = useApp((s) => s.trace !== null);
+  const incidentsOpen = useApp((s) => s.incidentsOpen);
 
   const topologyKey = useApp((s) => s.topologyKey);
 
@@ -34,14 +36,17 @@ export function App() {
       <NetworkCanvas key={topologyKey} insets={insets} />
       <TopBar />
       <Sidebar width={SIDEBAR_W} />
-      <ServicesPanel width={INSPECTOR_W} open={!selectedId && !tracing} />
+      <ServicesPanel width={INSPECTOR_W} open={!selectedId && !tracing && !incidentsOpen} />
       <Inspector width={INSPECTOR_W} />
       <TracePanel width={INSPECTOR_W} />
+      {!tracing && <IncidentsPanel width={INSPECTOR_W} />}
       <ZoomControls />
       <ActivityFeed left={SIDEBAR_W + 24} right={72} />
       <ErrorToast />
       <PolicySheet />
       <VulnerabilitiesSheet />
+      <PlaySheet />
+      <ReportSheet />
       <Wizard />
     </div>
   );
@@ -53,6 +58,7 @@ function TopBar() {
   const startTrace = useApp((s) => s.startTrace);
   const setPolicyOpen = useApp((s) => s.setPolicyOpen);
   const setVulnsOpen = useApp((s) => s.setVulnsOpen);
+  const setPlayOpen = useApp((s) => s.setPlayOpen);
   const exposed = useExposedCount();
   const profile = meta.profile;
   return (
@@ -99,10 +105,17 @@ function TopBar() {
         Vulnerabilities
         {exposed > 0 && <span className="rounded-full bg-bad px-1.5 text-[10px] font-bold text-white tabular-nums">{exposed}</span>}
       </button>
+      <button
+        onClick={() => setPlayOpen(true)}
+        className="h-7 shrink-0 rounded-[8px] bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-[#0077ed]"
+      >
+        Play
+      </button>
+      <GameHud />
       <div className="ml-auto flex items-center gap-3">
         <SimControls />
         <span className="hidden rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 xl:inline">
-          Phase 5 · Lifecycle & firmware
+          Phase 6 · Incidents
         </span>
       </div>
     </header>

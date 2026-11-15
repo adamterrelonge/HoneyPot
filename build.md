@@ -137,15 +137,16 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
 ```
 src/
   engine/        pure TS: model (schema), catalog, graph, stress (synthetic topology)
-    sim/         rng, clock, commands, demands, simulation, types   (policy/, incidents/ later)
+    sim/         rng, clock, commands, demands, simulation, types
     gen/         spec (BusinessSpec + wizard metadata), generate (templates → TopologyInput)
     policy/      policy.ts: rule matching, decisions, roles (pure)
     firmware/    catalog.ts (products, releases, real CVE advisories), lifecycle.ts (installs, failures)
+    incidents/   catalog.ts (10 incident kinds, actions, costs, scenarios), engine.ts (kill chains, detection, scoring)
   worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
   render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
   state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade)
   ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx,
-                 lifecycle-panels.tsx
+                 lifecycle-panels.tsx, game-panels.tsx (Play sheet, HUD, incidents, after-action report)
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -353,7 +354,59 @@ standard = one or two behind, generous = latest. The generator ships firmware th
   ÷ ticks per year.
 - Only single devices fail, not groups. Repairs take 2–6 h.
 
-**Planned additions:** Phase 6 `Incident`, `Scenario`, `Objective`.
+**Phase 6 additions** (`engine/incidents`):
+- **Modes:**
+  - `sandbox` (default): no incidents and no scoring.
+  - `free`: seeded random incidents. Calm, normal and intense run at 0.1, 0.2 and 0.5 per hour, with a
+    quarter of that rate overnight. At most 2 run at once, weighted towards whatever is exposed.
+  - `scenario`: scripted events, a duration and objectives. Five are built in; `ScenarioSchema` validates
+    scenario JSON.
+- **Commands:**
+  - `game.start{mode, scenarioId?, intensity?}` and `game.stop`.
+  - `incident.start{kind, target?}` and `incident.act{incidentId, action, nodeId?}`.
+  - `decoy.setDeployed{nodeId, deployed}`.
+  - The snapshot gains `game: GameView`.
+- **Ten incident kinds:** ransomware, phishing, edge exploit, DDoS, ISP outage, DNS misconfiguration, expired
+  certificate, backup saturating the WAN, failed update, insider. Hardware failure, listed in the original
+  plan, is covered by Phase 5's random failures, so an edge (VPN/firewall) exploit took its slot.
+- **Kill chain** (ransomware, phishing, edge exploit):
+  - **Initial access:** a camera on its default password, a phished person device whose role lacks MFA, or an
+    internet-facing device with an exploited CVE. If none exists, the attack is "blocked" (logged as good news).
+  - **Lateral movement:** every 10 sim-min the attacker tries a target reachable via route and firewall
+    (`files`). Success is 90% with an exploited CVE, otherwise 45% (stolen credentials). Servers weigh 3,
+    decoys 4.
+  - **Impact:** after 3–5 moves. Ransomware encrypts its footholds, which stay unusable until restored. The
+    other attacks exfiltrate: 30 Mbps of red `exfil` flows, counted as stolen data.
+  - **Contained** when no foothold is usable (isolate, power off, disable access). **Resolved** when contained
+    and restored.
+  - "Reset credentials" evicts footholds not held by an exploited CVE.
+- **Restore:** NAS backup 2 h £1k, offsite 4 h £2k, rebuild 24 h £10k, desktop re-image 1 h £500.
+- **Faults:**
+  - ISP outage: the primary WAN is down 1–3 h; escalating makes it 40% faster.
+  - DDoS: 2.5× WAN capacity at the portal for 2 h; upstream scrubbing takes 15 min and costs £1.5k.
+  - DNS misconfiguration: the internal DNS host gives wrong answers; revert takes 10 min.
+  - Expired certificate: the portal is down; renewal takes 20 min and costs £150.
+  - Daytime backup: 300 Mbps from the NAS to the cloud for 6 h; can be paused.
+  - Failed update: forces a config-broken firmware update; roll back to fix.
+  - Insider: a privileged or manager device sends 20 Mbps of exfil; disable access or isolate.
+- **Detection:** incidents are hidden from the player until detected:
+  - by time (phishing 3 h, edge exploit 6 h, insider 4 h, faults within minutes);
+  - immediately on encryption, a decoy being touched, or more than 2 GB exfiltrated;
+  - insiders within 30 min if a deployed decoy is reachable from their device.
+  Undetected incidents still appear in the report.
+- **Decoys:** dormant `honeypot` nodes tagged `decoy` (server room and first office floor). Until deployed they
+  are hidden and unusable. Deploying one costs £400 while playing.
+- **Costs:**
+  - £ per affected user per minute, by app: work apps £0.03–0.24 (a weighted share of an idle employee),
+    payments £1.50, production £3, imaging £0.60, portal £0.10. Degraded service counts half.
+  - Firmware installs cost £150 now or £250 tonight, plus the action costs above.
+  - Budget = £400 / £1,200 / £3,000 per employee (lean / standard / generous).
+- **Score** = 1000 − 450·lost/budget − 250·spend/budget − 0.08·MB stolen − 1.5·average minutes to contain.
+  Each objective passed or failed adds or subtracts 50. Grades: A ≥ 850, B ≥ 700, C ≥ 550, D ≥ 400, F below.
+- **After-action report:** every incident, including undetected ones, with its timeline, cost and lessons,
+  plus objectives and the grade.
+
+**Planned additions:** Phase 7 `SaveGame` (topology + seed + command log), share codes.
 
 ---
 
@@ -376,8 +429,8 @@ standard = one or two behind, generous = latest. The generator ships firmware th
 | Devices | status, CPU/mem load as %, firmware version, config flags, lifespan | real OS behaviour |
 | Firmware | catalogue with real CVE references, stability, update downtime, config-migration and brick risk, rollback, provider-managed kit, a 22:00 maintenance window | binary images, staged rollouts, vendor support contracts |
 | Hardware | age, per-kind failure rates compressed ×52, 2–6 h repairs, 4 h brick replacement | spares on site, partial group failures, warranty |
-| Attacks | kill-chain state machines (recon → initial access → lateral → impact) with probabilities | real exploit code (never) |
-| Business | services → business functions → cost/minute, staff idle, SLA | full accounting |
+| Attacks | kill chains: initial access (default password / phishing without MFA / exploited CVE) → lateral moves limited by real reachability and firewall rules → encrypt or exfiltrate; decoys alarm when touched | real exploit code (never), persistence, EDR, attacker adaptation |
+| Business | £ per affected user-minute per app (idle staff, lost sales, lost output) plus response spend against a budget; score and grade | full accounting, SLAs, reputational and regulatory cost |
 
 ---
 
@@ -437,16 +490,19 @@ criteria pass and a diary entry exists.
   tonight; random failures on by default.
 - **Done when:** firmware outcome tests (seeded) pass and the vulnerability exposure view is correct.
 
-### Phase 6 — Incidents, scenarios & scoring
+### Phase 6 — Incidents, scenarios & scoring ✅ (2026-11-15)
 - Incident state machines: ransomware, phishing → account takeover, DDoS, ISP outage, DNS
-  misconfiguration, expired certificate, backup saturating the WAN, failed update, insider, hardware failure.
+  misconfiguration, expired certificate, backup saturating the WAN, failed update, insider, edge exploit
+  (in place of hardware failure, which Phase 5 already covers).
+- Decisions: all ten incidents; scripted scenarios and free play; a running score plus an after-action report;
+  decoys included.
 - Scenario JSON (seed, topology/template, scripted and random events, objectives, budget).
 - Business impact: service → function → cost/min, staff idle, SLA. Score and budget.
 - Event log with causes. **Honeypot/decoy nodes** as a defensive tool.
 - **Done when:** each incident has a seeded test covering progress and containment.
 
 ### Phase 7 — Time travel & persistence
-- Undo/redo, replay timeline scrubber, after-action report.
+- Undo/redo, replay timeline scrubber, after-action report export (the report itself shipped in Phase 6).
 - Save/load in IndexedDB, export/import JSON, share codes (seed + command log).
 
 ### Phase 8 — Polish, accessibility & performance

@@ -339,6 +339,9 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
   const nas = d.node(zs, cloud ? "nvr-01" : "nas-01", {
     kind: "nas", label: cloud ? "Video Recorder" : "Backup NAS", ip: d.ip(1, 20), vlan: 20, services: cloud ? ["nvr"] : ["backup"],
   });
+  // Dormant decoy (Phase 6): hidden and inert until the player deploys it.
+  const decoyServers = d.node(zs, "decoy-servers", { kind: "honeypot", label: "Decoy File Server", ip: d.ip(1, 20), vlan: 20, tags: ["decoy"] });
+  d.link(core, decoyServers, "copper", 1000);
 
   // ── HQ special zones ───────────────────────────────────────────────────────
   let officeStaff = hq.staff;
@@ -586,6 +589,8 @@ function officeZone(
     site: s.n, uplink: ap, medium: "wifi", sharedMbps: cap, tags: ["byod"], alwaysGroup: true,
   });
   if (withCameras) {
+    const decoy = d.node(z, `decoy-${key}`, { kind: "honeypot", label: "Decoy Workstation", ip: d.ip(s.n, 30), vlan: 30, tags: ["decoy"] });
+    d.link(sw, decoy, "copper", 1000);
     // The IT team: few people, the most powerful accounts in the business.
     addSet(c, z, {
       key: `${key}-it`, single: "IT Admin Laptop", plural: "IT admin laptops", kind: "laptop",

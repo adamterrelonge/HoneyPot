@@ -77,4 +77,5 @@ export const CATEGORY_COLORS: Record<AppCategory, number> = {
   external: 0x5856d6,
   voice: 0x34c759,
   system: 0x30b0c7,
+  threat: 0xff3b30,
 };

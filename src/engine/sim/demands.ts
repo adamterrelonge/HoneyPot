@@ -26,6 +26,8 @@ export const APP_INFO: Record<AppId, { label: string; category: AppCategory; ico
   payments: { label: "Card payments", category: "external", icon: "💳" },
   production: { label: "Production line control", category: "system", icon: "⚙️" },
   imaging: { label: "Medical imaging", category: "work", icon: "🩻" },
+  ddos: { label: "Attack traffic (DDoS)", category: "threat", icon: "🌊" },
+  exfil: { label: "Data leaving the network", category: "threat", icon: "📤" },
 };
 
 /** App label in the context of a topology: the line-of-business app takes its server's name. */

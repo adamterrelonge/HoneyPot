@@ -37,6 +37,12 @@ interface AppState {
   trace: { source: string | null; target: string | null; service: string | null; result: TraceResult | null } | null;
   policyOpen: "rules" | "access" | null;
   vulnsOpen: boolean;
+  playOpen: boolean;
+  incidentsOpen: boolean;
+  reportOpen: boolean;
+  setPlayOpen: (open: boolean) => void;
+  setIncidentsOpen: (open: boolean) => void;
+  setReportOpen: (open: boolean) => void;
   /** Colour devices on the map by their worst known vulnerability. */
   riskLens: boolean;
   setVulnsOpen: (open: boolean) => void;
@@ -78,6 +84,12 @@ export const useApp = create<AppState>()((set, get) => ({
   policyOpen: null,
   vulnsOpen: false,
   riskLens: false,
+  playOpen: false,
+  incidentsOpen: false,
+  reportOpen: false,
+  setPlayOpen: (playOpen) => set({ playOpen }),
+  setIncidentsOpen: (incidentsOpen) => set({ incidentsOpen }),
+  setReportOpen: (reportOpen) => set({ reportOpen }),
   setVulnsOpen: (vulnsOpen) => set({ vulnsOpen }),
   setRiskLens: (riskLens) => set({ riskLens }),
 
@@ -85,7 +97,7 @@ export const useApp = create<AppState>()((set, get) => ({
     const topology = parseTopology(input);
     set({
       topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
-      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false,
+      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false, playOpen: false, incidentsOpen: false, reportOpen: false,
     });
     sim.load(input);
   },

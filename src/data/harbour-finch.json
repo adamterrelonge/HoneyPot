@@ -39,7 +39,10 @@
     { "id": "lt-junior", "kind": "laptop", "label": "Junior Laptop", "zoneId": "z-office", "pos": { "x": 20, "y": 12 }, "ip": "10.0.40.33", "vlan": 40, "os": "Windows 11 23H2" },
     { "id": "phones", "kind": "phone", "label": "Staff Mobiles", "zoneId": "z-office", "pos": { "x": 15, "y": 14 }, "ip": "10.0.40.100", "vlan": 40, "tags": ["byod"] },
     { "id": "voip-01", "kind": "voip", "label": "Desk Phones", "zoneId": "z-office", "pos": { "x": 22, "y": 12 }, "subnet": "10.0.50.0/24", "vlan": 50, "services": ["sip"], "count": 24 },
-    { "id": "cctv-01", "kind": "camera", "label": "CCTV Camera", "zoneId": "z-office", "pos": { "x": 21, "y": 14 }, "ip": "10.0.60.10", "vlan": 60, "firmware": { "vendor": "Optica", "version": "CamOS 1.8.2" }, "tags": ["default-credentials"] }
+    { "id": "cctv-01", "kind": "camera", "label": "CCTV Camera", "zoneId": "z-office", "pos": { "x": 21, "y": 14 }, "ip": "10.0.60.10", "vlan": 60, "firmware": { "vendor": "Optica", "version": "CamOS 1.8.2" }, "tags": ["default-credentials"] },
+
+    { "id": "decoy-servers", "kind": "honeypot", "label": "Decoy File Server", "zoneId": "z-server", "pos": { "x": 15, "y": 4 }, "ip": "10.0.20.30", "vlan": 20, "tags": ["decoy"] },
+    { "id": "decoy-office", "kind": "honeypot", "label": "Decoy Workstation", "zoneId": "z-office", "pos": { "x": 14, "y": 14 }, "ip": "10.0.30.90", "vlan": 30, "tags": ["decoy"] }
   ],
   "links": [
     { "id": "l-saas-internet", "a": "saas", "b": "internet", "medium": "wan", "bandwidthMbps": 10000, "latencyMs": 12 },
@@ -64,6 +67,8 @@
     { "id": "l-ap-partner", "a": "ap-01", "b": "lt-partner", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
     { "id": "l-ap-accountant", "a": "ap-01", "b": "lt-accountant", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
     { "id": "l-ap-junior", "a": "ap-01", "b": "lt-junior", "medium": "wifi", "bandwidthMbps": 600, "latencyMs": 3 },
-    { "id": "l-ap-phones", "a": "ap-01", "b": "phones", "medium": "wifi", "bandwidthMbps": 300, "latencyMs": 5 }
+    { "id": "l-ap-phones", "a": "ap-01", "b": "phones", "medium": "wifi", "bandwidthMbps": 300, "latencyMs": 5 },
+    { "id": "l-core-decoy", "a": "sw-core", "b": "decoy-servers", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 },
+    { "id": "l-floor-decoy", "a": "sw-floor", "b": "decoy-office", "medium": "copper", "bandwidthMbps": 1000, "latencyMs": 0.2 }
   ]
 }

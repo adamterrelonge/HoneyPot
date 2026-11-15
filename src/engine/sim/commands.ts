@@ -4,6 +4,7 @@
  * so (seed + topology + log) fully reproduces a session.
  */
 import { z } from "zod";
+import { INCIDENT_KINDS } from "../incidents/catalog";
 import { ACCESS_LEVELS, ROLES, RuleSchema } from "../model";
 
 const RulePatch = RuleSchema.pick({ name: true, from: true, to: true, services: true, action: true, enabled: true }).partial();
@@ -39,6 +40,15 @@ export const CommandSchema = z.discriminatedUnion("type", [
     type: z.literal("device.fail"), nodeId: z.string().min(1), fault: z.string().min(1).optional(),
     hours: z.number().positive().max(72).optional(),
   }),
+  // Phase 6: incidents, scenarios and decoys
+  z.object({
+    type: z.literal("game.start"), mode: z.enum(["free", "scenario"]), scenarioId: z.string().optional(),
+    intensity: z.enum(["calm", "normal", "intense"]).optional(),
+  }),
+  z.object({ type: z.literal("game.stop") }),
+  z.object({ type: z.literal("incident.start"), kind: z.enum(INCIDENT_KINDS), target: z.string().optional() }),
+  z.object({ type: z.literal("incident.act"), incidentId: z.string().min(1), action: z.string().min(1), nodeId: z.string().optional() }),
+  z.object({ type: z.literal("decoy.setDeployed"), nodeId: z.string().min(1), deployed: z.boolean() }),
 ]);
 
 export type Command = z.output<typeof CommandSchema>;

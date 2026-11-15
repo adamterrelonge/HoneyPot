@@ -3,20 +3,23 @@
  * Everything here is plain data so snapshots can cross the worker boundary by structured clone.
  */
 import type { DeviceSim } from "../firmware/lifecycle";
+import type { GameView } from "../incidents/engine";
 import type { NodeStatus, Role, RoleDef, Rule } from "../model";
 
-export type { DeviceSim };
+export type { DeviceSim, GameView };
 
 /** User-facing business applications. Each demand belongs to exactly one. */
 export const APP_IDS = [
   "email-docs", "files", "practice-db", "web", "print",
   "portal", "remote", "voice", "cctv", "backup-local", "backup-offsite",
   "payments", "production", "imaging",
+  // Phase 6: attacker traffic injected by incidents (never shown as business services).
+  "ddos", "exfil",
 ] as const;
 export type AppId = (typeof APP_IDS)[number];
 
 /** Particle/category colouring and grouping in the UI. */
-export type AppCategory = "work" | "external" | "voice" | "system";
+export type AppCategory = "work" | "external" | "voice" | "system" | "threat";
 
 export type Schedule =
   | { kind: "work" }
@@ -131,6 +134,8 @@ export interface Snapshot {
   /** Firmware/software versions, exposure, condition and age per device (Phase 5). */
   devices: Record<string, DeviceSim>;
   failuresEnabled: boolean;
+  /** Game mode, score, incidents and decoys (Phase 6). */
+  game: GameView;
   hash: string;
 }
 

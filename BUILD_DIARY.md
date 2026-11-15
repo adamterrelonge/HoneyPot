@@ -546,3 +546,135 @@ Defenders respond with the existing tools (isolate, disable access, patch, rules
    time to contain, and spend on fixes, against a budget. Show a running score plus an after-action report?
 4. **Honeypot/decoy nodes:** let the player deploy a decoy that alerts instantly when touched (making lateral
    movement visible). Include it in Phase 6?
+
+---
+
+## Phase 6 — Incidents, scenarios & scoring · 2026-11-15 · ✅ complete
+
+### 1. Summary
+- **Incident engine** (`src/engine/incidents/`). It is pure TS, seeded, and driven only by commands, so it
+  stays inside the replay hash. There are ten incident kinds:
+  - **Kill chains:** ransomware, phishing → account takeover, and an edge (VPN/firewall) exploit.
+    - Initial access uses what earlier phases built: cameras on default passwords, person devices whose role
+      has no MFA, and internet-facing devices with exploited CVEs.
+    - Lateral movement goes only where the real routing and firewall rules allow, so segmentation genuinely
+      stops attacks.
+    - Impact is either encryption (devices unusable until restored) or exfiltration (red `exfil` flows on the
+      map that use real bandwidth).
+  - **Faults:** ISP outage, DDoS on the portal, DNS misconfiguration, expired certificate, a daytime backup
+    saturating the WAN, a failed automatic update, and an insider copying data. Hardware failure was in the
+    original list; it already exists as Phase 5's random failures, so the edge exploit took its slot.
+- **Response:**
+  - Existing tools work: isolate, power off, disable access, patch, firewall rules.
+  - Incident actions: scrubbing, escalating to the ISP, reverting DNS, renewing the certificate, pausing the
+    backup, resetting credentials.
+  - Restore options: NAS backup, offsite, rebuild, re-image. Each has its own time and cost.
+- **Detection:** incidents stay hidden until detected (by time, encryption, a touched decoy, or exfil volume).
+  Undetected incidents appear in the after-action report.
+- **Honeypot/decoy nodes:**
+  - The generator and the sample add dormant decoys in the server room and on the first office floor.
+  - Dormant decoys are invisible on the map, in the sidebar and in the simulation. Deploying one makes it
+    real, and the first attacker who touches it raises an instant alarm. Insiders are caught within 30 min if a
+    deployed decoy is reachable from their device.
+- **Modes:**
+  - Sandbox (default; unchanged behaviour).
+  - Free play: calm, normal or intense, seeded, weighted by exposure.
+  - Five scripted scenarios with objectives: *Monday ransomware*, *Patch day gone wrong*, *Black Friday*,
+    *Edge breach*, *A bad day*.
+- **Scoring:**
+  - Money lost: £ per affected user-minute per app; payments and production cost the most.
+  - Spend: actions, restores, decoys, firmware installs.
+  - Also data stolen, time to contain, and objectives.
+  - Everything is measured against a budget per employee, giving a live score and an A–F grade.
+- **UI** (`src/ui/game-panels.tsx`): a Play sheet (modes, scenarios, decoy switches), a HUD in the top bar
+  (score, £ lost, active incidents), an Incidents panel (cards, footholds, one-click actions), and an
+  after-action report (tiles, objectives, per-incident timelines, lessons).
+
+### 2. Tests run
+| Command | Result |
+|---|---|
+| `npm run check` (typecheck app + engine, Vitest, `vite build`) | ✅ 126/126 tests, build OK |
+| `src/engine/incidents/incidents.test.ts` (new) | ✅ 20 tests, listed below |
+
+The 20 new incident tests:
+- **Decoys:** dormant decoys are invisible and inert until deployed; a deployed decoy raises the alarm when
+  touched.
+- **Ransomware:** gets in via the default-password camera, spreads, encrypts and is detected. Isolating every
+  foothold contains it; restoring resolves it.
+- **Segmentation:** firewall rules into the server room stop the spread, including a pivot through the DMZ.
+- **Phishing:** MFA for every role stops it; without MFA the attacker gets a foothold and steals data.
+- **Edge exploit:** an exploited firewall CVE gives a foothold.
+- **DDoS:** saturates the internet link until upstream protection starts.
+- **ISP outage:** takes cloud apps down until the provider fixes it.
+- **DNS misconfiguration:** breaks name lookups until reverted.
+- **Expired certificate:** stops portal customers until renewed.
+- **Daytime backup:** fills the internet link until paused.
+- **Failed update:** leaves the device degraded until rolled back.
+- **Insider:** copies data until their access is disabled.
+- **Scoring:** losses accrue from downtime, and spending reduces the score.
+- **Hidden incidents:** undetected incidents stay hidden from the player until the game ends.
+- **Scenarios:** all five built-in scenarios are valid, run their events and finish with objectives scored.
+- **Free play:** raises incidents over a working day.
+- **Replay:** a whole game replays deterministically from its command log.
+
+Earlier suites were updated: the sample now has 26 nodes and 25 links (two decoys), and the routing tests
+(lanes, crossing gaps, no cable under a device) still pass with the decoy cables.
+
+**Visual checks** (Chrome, sample business):
+- The Play sheet renders the modes, the five scenario cards and the decoy switches.
+- "Patch day gone wrong" at 16× produced both scripted incidents: DNS misconfiguration and a failed
+  automatic update. Both were detected and shown with timelines.
+- "Revert the DNS change (10 min · £0)" was offered, the HUD read *764 · £1,098 lost · 2 active*, and the
+  activity feed showed the "DNS broken" reasons on failing flows.
+- Dormant decoys are absent from the map and the sidebar.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| The segmentation test failed: the attacker still reached the server room with office→server blocked | Realistic: it pivoted office → DMZ portal → server room | The test now blocks edge→server too and asserts no foothold in `z-server` |
+| `l-ap-junior` crossed the new decoy cable inside a corner arc, so the gap test failed | The office decoy at (18,14) forced an awkward route | Moved `decoy-office` to (14,14) |
+| Timing tests flaky under parallel Vitest load | CPU contention, not regressions | Routing stress budget raised to 3 s; firmware outcome and replay tests given 60 s timeouts; the engine stress test takes the best of 3 batches (still < 10 ms/tick) |
+| Dormant decoys would have shown as ghost icons and cables | The renderer drew every node and link | Scene hides decoy roots, labels and links; decoy state is part of the link-cache key; the sidebar filters them out |
+| Shell scripts mangled by quoting (heredocs and template literals) | Git Bash on Windows | Multi-line edits use scratchpad `.cjs` scripts or the Edit tool |
+
+### 4. Known limitations / debt
+- Attackers don't adapt: no persistence, no re-entry after eviction, no choosing targets by data value.
+- An attack holds a whole group foothold ("Sales · 24 laptops"), not one laptop in it, so isolating the group
+  is the only per-device response (groups are still group-wide by decision).
+- Cost per user-minute is a flat table per app; it ignores time of day beyond the demand curve, and there is
+  no SLA or regulatory penalty.
+- Detection is rule-based (timers, decoys, volume); there is no SIEM, log source or false positive.
+- The DDoS hits only the customer portal; no volumetric attack on the VPN.
+- Score weights are first guesses and will need tuning by playing.
+- Scenarios are built in; loading scenario JSON from a file waits for Phase 7 import/export.
+- The after-action report sheet typechecks and builds, and the data behind it is unit-tested, but I didn't
+  open it in the browser this phase. Only the Play sheet, HUD and Incidents panel were checked visually.
+- The real CVE details in the firmware catalogue (Phase 5) should still be spot-checked against NVD.
+
+### 5. Ideas for later
+- Detection tools as purchases: an EDR agent (faster detection on laptops), a SIEM (raises detection odds),
+  egress filtering (caps exfil).
+- Backup hygiene as a choice: immutable or offsite backups decide whether ransomware can encrypt the NAS.
+- A "tabletop" mode: pause on each detection and ask the player what they'd do, then grade it.
+- Attackers with personalities (opportunist, targeted, insider) that pick different paths.
+- Show the attacker's path on the map after the game as an animated replay (pairs with Phase 7's scrubber).
+- Scenario editor: drag events onto a timeline and save them as JSON.
+
+### 6. Hand-off for Phase 7 — Time travel & persistence
+**Start at:** `build.md` §8 Phase 7. The building blocks exist: every change is a validated command, the
+command log replays to an identical hash, and incidents are part of that hash.
+- **Undo/redo:** replay the log up to N−1 from the initial topology and seed, with snapshots every few
+  minutes so replay is fast.
+- **Timeline scrubber:** a track under the canvas with incident markers; drag to rewind and view the past
+  read-only.
+- **Save/load:** IndexedDB (Dexie) storing topology + seed + command log; export and import JSON
+  (including scenario JSON).
+- **Share codes:** a compressed seed + command log; **report export:** after-action report to PDF or Markdown.
+
+**Decisions needed from you:**
+1. **Undo scope:** undo every player command (including incident actions mid-game, which would allow
+   "cheating" a score), or only outside a game, with games treated as committed?
+2. **Scrubber:** rewind and *branch* (play on from an earlier moment, discarding the future), or rewind to
+   watch only?
+3. **Saves:** autosave plus named slots, or named saves only? Keep how many autosaves?
+4. **Report export:** PDF, Markdown, or both? Share codes as a URL (`?s=…`) or a copyable text code?

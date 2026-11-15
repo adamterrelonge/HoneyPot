@@ -17,8 +17,8 @@ const problemsOf = (input: unknown): string[] => {
 describe("TopologySchema", () => {
   it("accepts the Harbour & Finch sample and applies defaults", () => {
     const t = parseTopology(sample);
-    expect(t.nodes).toHaveLength(24);
-    expect(t.links).toHaveLength(23);
+    expect(t.nodes).toHaveLength(26); // 24 devices + 2 dormant decoys
+    expect(t.links).toHaveLength(25);
     expect(t.nodes.every((n) => n.status === "online")).toBe(true);
     expect(t.links.every((l) => l.status === "up")).toBe(true);
   });

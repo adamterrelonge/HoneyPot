@@ -44,14 +44,16 @@ export function Sidebar({ width }: { width: number }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const live = useMemo(() => useSim.getState().snap?.nodes, [statusKey]);
 
+  const decoyKey = useSim((s) => JSON.stringify(s.snap?.game.decoys ?? {}));
   const groups = useMemo(() => {
+    const decoys = JSON.parse(decoyKey) as Record<string, boolean>;
     const q = query.trim().toLowerCase();
     const match = (n: NetNode) =>
       !q || [n.label, n.ip ?? "", NODE_CATALOG[n.kind].label].some((v) => v.toLowerCase().includes(q));
     return topology.zones
-      .map((z) => ({ zone: z, nodes: topology.nodes.filter((n) => n.zoneId === z.id && match(n)) }))
+      .map((z) => ({ zone: z, nodes: topology.nodes.filter((n) => n.zoneId === z.id && match(n) && decoys[n.id] !== false) }))
       .filter((g) => g.nodes.length > 0);
-  }, [topology, query]);
+  }, [topology, query, decoyKey]);
 
   return (
     <aside

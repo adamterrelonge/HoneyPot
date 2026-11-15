@@ -15,7 +15,7 @@
 import type { Budget, NetNode, NodeKind, Topology } from "../model";
 import { MINUTES_PER_TICK, START_MINUTE, formatClock, minuteOfTick } from "../sim/clock";
 import { deriveSeed, noise } from "../sim/rng";
-import { exposure, initialVersion, latest, productOf, versionIndex, type Product } from "./catalog";
+import { exposure, initialVersion, latest, productOf, versionIndex, type Advisory, type Product } from "./catalog";
 
 export type Condition = "ok" | "updating" | "config-broken" | "bricked" | "failed";
 
@@ -148,6 +148,10 @@ export class Lifecycle {
 
   // ── Queries used by the simulation ────────────────────────────────────────
 
+  conditionOf(id: string): Condition {
+    return this.states.get(id)?.condition ?? "ok";
+  }
+
   isDown(id: string): boolean {
     const c = this.states.get(id)?.condition;
     return c === "updating" || c === "bricked" || c === "failed";
@@ -173,6 +177,28 @@ export class Lifecycle {
     const st = this.states.get(id);
     if (st?.condition !== "config-broken") return null;
     return `${this.nodes.get(id)!.label}: settings didn't migrate after the update to ${st.version} (roll back to ${st.previous})`;
+  }
+
+  /** Advisories the device's installed version is exposed to (used by the incident engine). */
+  advisories(id: string): Advisory[] {
+    const st = this.states.get(id);
+    const n = this.nodes.get(id);
+    return st?.product && st.version && n ? exposure(st.product, st.version, n) : [];
+  }
+
+  /**
+   * An unattended automatic update that goes wrong (Phase 6 "failed update" incident):
+   * installs the newest release and the settings don't migrate. False if not possible.
+   */
+  forceFailedUpdate(id: string, tick: number): boolean {
+    const st = this.states.get(id);
+    const n = this.nodes.get(id);
+    if (!st?.product || !n || st.product.providerManaged || st.condition !== "ok") return false;
+    const to = latest(st.product);
+    this.startJob(n, st, to, tick, false);
+    st.job!.outcome = "config";
+    if (to === st.version) st.job!.from = st.product.releases[Math.max(0, versionIndex(st.product, to) - 1)]!.version;
+    return true;
   }
 
   // ── Commands ──────────────────────────────────────────────────────────────

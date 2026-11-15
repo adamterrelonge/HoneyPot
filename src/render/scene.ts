@@ -393,7 +393,7 @@ export class NetworkScene {
     const links = this.snap?.links;
     // Only rebuild geometry when something visible changed.
     const bucket = (u: number) => (u >= 1 ? 3 : u >= 0.8 ? 2 : u > 0.001 ? 1 : 0);
-    const key = links ? t.links.map((l) => `${links[l.id]?.state}${bucket(links[l.id]?.util ?? 0)}`).join("") : "static";
+    const key = JSON.stringify(this.snap?.game?.decoys ?? {}) + (links ? t.links.map((l) => `${links[l.id]?.state}${bucket(links[l.id]?.util ?? 0)}`).join("") : "static");
     if (key === this.linkKey) return;
     this.linkKey = key;
 
@@ -402,9 +402,10 @@ export class NetworkScene {
     this.linkDownG.clear();
     this.linkDashG.context.customShader = this.dashShader;
     this.linkDownG.context.customShader = this.downShader;
+    const decoys = this.snap?.game?.decoys ?? {};
     for (const l of t.links) {
       const r = this.routes.get(l.id);
-      if (!r) continue;
+      if (!r || decoys[l.a] === false || decoys[l.b] === false) continue;
       const s = links?.[l.id];
       const dashed = MEDIUM_STYLE[l.medium].dashed;
       if (s?.state === "down") this.strokeRoute(this.linkDownG, r, STATUS_COLORS.offline, 0.85);
@@ -504,6 +505,8 @@ export class NetworkScene {
     for (const [id, v] of this.views) {
       const s = nodes[id];
       if (!s) continue;
+      // Dormant decoys are invisible until deployed (Phase 6).
+      v.root.visible = this.snap?.game?.decoys[id] !== false;
       const device = this.snap?.devices?.[id];
       const updating = device?.condition === "updating";
       const color = s.isolated ? COLORS.ink3 : updating ? COLORS.accent : s.status === "online" ? null : STATUS_COLORS[s.status];
@@ -841,7 +844,7 @@ export class NetworkScene {
       v.alpha += ((lit ? 1 : 0.35) - v.alpha) * ease;
       v.root.alpha = v.alpha;
       v.label.alpha = isSel || isHover ? 1 : v.alpha * labelZoomAlpha;
-      v.label.visible = v.label.alpha > 0.01;
+      v.label.visible = v.label.alpha > 0.01 && v.root.visible;
     }
   };
 }

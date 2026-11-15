@@ -95,7 +95,9 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
   const topology = useApp((s) => s.topology);
   if (!apps) return null;
 
-  const ordered = APP_IDS.map((id) => apps.find((a) => a.app === id)).filter((a) => a !== undefined);
+  const ordered = APP_IDS.map((id) => apps.find((a) => a.app === id))
+    .filter((a) => a !== undefined)
+    .filter((a) => APP_INFO[a.app].category !== "threat");
   const problems = ordered.filter((a) => a.status === "down" || a.status === "degraded").length;
   const label = (id: string) => topology.nodes.find((n) => n.id === id)?.label ?? id;
   const busiest = topology.links

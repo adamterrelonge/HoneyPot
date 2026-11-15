@@ -18,6 +18,7 @@ import {
   PERSON_KINDS, ROLE_INFO, accessFor, decide, defaultRole, describeSelector, resolveRoles, type Decision,
 } from "../policy/policy";
 import { Lifecycle } from "../firmware/lifecycle";
+import { IncidentEngine, type World } from "../incidents/engine";
 import { blockRuleId, parseCommand, type Command, type CommandResult, type LoggedCommand } from "./commands";
 import { minuteOfTick, windowCurve, workdayCurve } from "./clock";
 import { APP_INFO, appLabel, deriveDemands, needsFor, serviceLabel, serviceOfHost } from "./demands";
@@ -104,6 +105,10 @@ export class Simulation {
   private blocking: Record<string, number> = {};
   /** Firmware, failures and repairs (Phase 5). */
   readonly lifecycle: Lifecycle;
+  /** Incidents, scenarios, scoring and decoys (Phase 6). */
+  readonly incidents: IncidentEngine;
+  private effectKey = "";
+  private readonly wanMbps: number;
   /** Number of shortest-path trees built (for tests: proves caching works). */
   pathComputations = 0;
 
@@ -159,6 +164,9 @@ export class Simulation {
       this.latency.set(l.id, hops.reduce((s, h) => s + h.link.latencyMs, 0));
     }
     this.lifecycle = new Lifecycle(topology, this.seed, opts.failures ?? true);
+    this.incidents = new IncidentEngine(topology, this.seed);
+    const isp = topology.nodes.find((x) => x.kind === "isp");
+    this.wanMbps = topology.links.find((l) => isp && (l.a === isp.id || l.b === isp.id) && l.medium === "wan")?.bandwidthMbps ?? 1000;
     const hosts = (service: string) => topology.nodes.filter((n) => n.services.includes(service));
     this.needHosts = { dns: hosts("dns"), directory: hosts("directory") };
 
@@ -195,8 +203,40 @@ export class Simulation {
       const life = this.lifecycle.step(this._tick);
       for (const e of life.events) this.emit(e.severity, e.text, e.subject);
       if (life.changed) this.invalidate();
+      for (const e of this.incidents.step(this.world())) this.emit(e.severity, e.text, e.subject);
+      this.syncIncidentEffects();
       this.evaluate(false);
     }
+  }
+
+/** Incident effects that change reachability (encryption, outages, DNS, certificates, decoys). */
+  private syncIncidentEffects(): void {
+    const key = this.incidents.effectKey();
+    if (key !== this.effectKey) {
+      this.effectKey = key;
+      this.invalidate();
+    }
+  }
+
+  /** The view of the world the incident engine works from. */
+  private world(): World {
+    return {
+      tick: this._tick,
+      usable: (id) => this.usable(id),
+      accessBlocked: (id) => this.rules.some((r) => r.id === blockRuleId(id) && r.enabled),
+      canReach: (a, b, service) => this.usable(a) && this.usable(b) && this.route(a, b) !== null && this.decision(a, b, service).allowed,
+      roleOf: (id) => this.nodeRole.get(id),
+      mfa: (role) => this.roles[role].mfa,
+      exposed: (id) => this.lifecycle.advisories(id),
+      forceUpdate: (id) => {
+        const ok = this.lifecycle.forceFailedUpdate(id, this._tick);
+        if (ok) this.invalidate();
+        return ok;
+      },
+      condition: (id) => this.lifecycle.conditionOf(id),
+      apps: this.appHealth,
+      flows: this.flows,
+    };
   }
 
   /** Reachability or device usability changed: recompute paths lazily. */
@@ -217,6 +257,7 @@ export class Simulation {
     this.trees.clear();
     this.resolved = [];
     this.emit(res.severity, res.text, res.subject);
+    this.syncIncidentEffects();
     this.evaluate(false);
     return { ok: true };
   }
@@ -240,6 +281,7 @@ export class Simulation {
       },
       devices: this.lifecycle.snapshot(),
       failuresEnabled: this.lifecycle.failuresEnabled,
+      game: this.incidents.view(this._tick, { usable: (id) => this.usable(id) }),
       hash: this.hash(),
     };
   }
@@ -258,7 +300,7 @@ export class Simulation {
     for (const f of this.flows) parts.push(`${f.id}:${f.status}:${f.throughputMbps.toFixed(4)}:${f.latencyMs.toFixed(3)}`);
     parts.push(`e${this.eventSeq}`);
     parts.push(JSON.stringify(this.rules), JSON.stringify(this.roles), JSON.stringify([...this.nodeRole]));
-    parts.push(this.lifecycle.hashPart());
+    parts.push(this.lifecycle.hashPart(), this.incidents.hashPart());
     return fnv1a(parts.join("|")).toString(16).padStart(8, "0");
   }
 
@@ -403,6 +445,17 @@ export class Simulation {
         };
       }
 
+      // ── Incidents & game (Phase 6) ──
+      case "game.start":
+      case "game.stop":
+      case "incident.start":
+      case "incident.act":
+      case "decoy.setDeployed": {
+        const res = this.incidents.apply(cmd, this.world());
+        if (!res.ok || res.noop) return res;
+        return { ok: true, noop: false, text: res.event.text, severity: res.event.severity, subject: res.event.subject ?? "" };
+      }
+
       // ── Lifecycle (Phase 5) ──
       case "firmware.install":
       case "firmware.cancel":
@@ -411,6 +464,8 @@ export class Simulation {
       case "device.fail": {
         const res = this.lifecycle.apply(cmd, this._tick);
         if (!res.ok || res.noop) return res;
+        // Paid work counts against the response budget while playing.
+        if (cmd.type === "firmware.install") this.incidents.charge(cmd.when === "tonight" ? 250 : 150);
         return { ok: true, noop: false, text: res.event.text, severity: res.event.severity, subject: res.event.subject ?? "" };
       }
     }
@@ -466,9 +521,13 @@ export class Simulation {
     const hopsOf: (Hop[] | null)[] = [];
     const blocking: Record<string, number> = {};
 
-    // 1–2. Resolve demands to paths and offered load.
-    this.demands.forEach((d, i) => {
-      const demandMbps = this.demandNow(i, minute);
+    // 1–2. Resolve demands to paths and offered load: the standing demands (paths cached) plus any
+    // traffic incidents inject this tick (resolved fresh).
+    const all = [
+      ...this.demands.map((d, i) => ({ d, mbps: this.demandNow(i, minute), cache: i })),
+      ...this.incidents.demands().map((x) => ({ d: x.demand, mbps: x.demand.app === "ddos" ? this.wanMbps * 2.5 : x.mbps, cache: -1 })),
+    ];
+    all.forEach(({ d, mbps: demandMbps, cache }) => {
       const base: FlowState = {
         id: d.id, app: d.app, client: d.client, server: d.server, via: d.via, bulk: d.bulk, users: d.users,
         status: "idle", demandMbps, throughputMbps: 0, latencyMs: 0, loss: 0, path: null,
@@ -479,10 +538,11 @@ export class Simulation {
         return;
       }
       // Paths and dependencies only change after a command, so resolve once per topology change.
-      let resolved = this.resolved[i];
+      let resolved = cache >= 0 ? this.resolved[cache] : undefined;
       if (!resolved) {
         const r = this.resolve(d);
-        resolved = this.resolved[i] = "reason" in r ? r : { path: r.path, hops: this.physical(r.hops) };
+        resolved = "reason" in r ? r : { path: r.path, hops: this.physical(r.hops) };
+        if (cache >= 0) this.resolved[cache] = resolved;
       }
       if ("reason" in resolved) {
         if (resolved.ruleId) blocking[resolved.ruleId] = (blocking[resolved.ruleId] ?? 0) + d.users;
@@ -506,7 +566,7 @@ export class Simulation {
     for (const l of this.topology.links) {
       const ab = loadAB.get(l.id) ?? 0;
       const ba = loadBA.get(l.id) ?? 0;
-      const state = !this.linkUp.get(l.id) ? "down" : this.linkUsable(l) ? "up" : "blocked";
+      const state = !this.linkUp.get(l.id) || this.incidents.linkDown(l.id) ? "down" : this.linkUsable(l) ? "up" : "blocked";
       linkSims[l.id] = { state, util: Math.max(ab, ba) / l.bandwidthMbps, loadAB: ab, loadBA: ba, capacityMbps: l.bandwidthMbps };
     }
     const dirUtil = (h: Hop, alongPath: boolean) => {
@@ -519,7 +579,7 @@ export class Simulation {
     flows.forEach((f, i) => {
       const hops = hopsOf[i];
       if (!hops) return;
-      const d = this.demands[i]!;
+      const d = all[i]!.d;
       let share = 1;
       let latency = 0;
       let worst: { hop: Hop; util: number } | null = null;
@@ -576,13 +636,16 @@ export class Simulation {
   }
 
   private usable(id: string): boolean {
-    return this.powered.get(id) === true && this.isolated.get(id) === false && !this.lifecycle.isDown(id);
+    return (
+      this.powered.get(id) === true && this.isolated.get(id) === false && !this.lifecycle.isDown(id) &&
+      !this.incidents.isDormantDecoy(id) && !this.incidents.encryptedReason(id)
+    );
   }
 
   /** A link carries traffic when it is up, both ends are usable and (for tunnels) its underlay is too. */
   private linkUsable(l: Link): boolean {
     // Hot path (Dijkstra, every tick): no string building here; see linkProblem for the why.
-    if (!this.linkUp.get(l.id) || !this.usable(l.a) || !this.usable(l.b)) return false;
+    if (!this.linkUp.get(l.id) || this.incidents.linkDown(l.id) || !this.usable(l.a) || !this.usable(l.b)) return false;
     const under = this.underlay.get(l.id);
     return !under || under.every((h) => this.linkUsable(h.link));
   }
@@ -590,6 +653,8 @@ export class Simulation {
   /** Why a link can't carry traffic, or null. */
   private linkProblem(l: Link): string | null {
     if (!this.linkUp.get(l.id)) return `${this.linkNoun(l)} ${this.linkLabel(l)} is down`;
+    const outage = this.incidents.linkDown(l.id);
+    if (outage) return `${this.linkNoun(l)} ${this.linkLabel(l)} is down: ${outage}`;
     for (const id of [l.a, l.b]) {
       const r = this.unusableReason(id);
       if (r) return r;
@@ -606,7 +671,8 @@ export class Simulation {
     const n = this.nodes.get(id)!;
     if (!this.powered.get(id)) return `${n.label} is powered off`;
     if (this.isolated.get(id)) return `${n.label} is isolated`;
-    return this.lifecycle.downReason(id);
+    if (this.incidents.isDormantDecoy(id)) return `${n.label} is a decoy that hasn't been deployed`;
+    return this.lifecycle.downReason(id) ?? this.incidents.encryptedReason(id);
   }
 
   /** Firewall decision for traffic of `service` from device a to device b. */
@@ -637,6 +703,9 @@ export class Simulation {
       if (dep.ok) continue;
       return { reason: dep.reason, ruleId: dep.ruleId };
     }
+    if (d.app === "portal" && this.incidents.certExpired(d.server)) {
+      return { reason: `${this.nodes.get(d.server)!.label}'s certificate expired: browsers refuse to connect` };
+    }
     const legs: [string, string][] = d.via ? [[d.client, d.via], [d.via, d.server]] : [[d.client, d.server]];
     const nodes: string[] = [d.client];
     const hops: Hop[] = [];
@@ -659,13 +728,19 @@ export class Simulation {
     const self = hosts.find((h) => h.id === from);
     if (!hosts.length || self) return { ok: true, host: self ?? null };
     let blocked: Decision | null = null;
+    let broken: NetNode | null = null;
     for (const h of hosts) {
       if (this.unusableReason(h.id) || !this.route(from, h.id)) continue;
+      if (need === "dns" && this.incidents.dnsBroken(h.id)) {
+        broken ??= h;
+        continue;
+      }
       const verdict = this.decision(from, h.id, need);
       if (verdict.allowed) return { ok: true, host: h };
       blocked ??= verdict;
     }
     const what = need === "dns" ? "DNS" : "Sign-in";
+    if (broken) return { ok: false, reason: `DNS broken: ${broken.label} is giving wrong answers after a bad change` };
     if (blocked) return { ok: false, reason: `${what} blocked by the firewall: ${blocked.reason}`, ruleId: blocked.rule?.id };
     return { ok: false, reason: `${what} unavailable: ${this.explainBreak(from, hosts[0]!.id)}` };
   }
@@ -900,7 +975,11 @@ export class Simulation {
         out[n.id] = { status: "offline", powered, isolated, reasons: [powered ? "Isolated: all ports disabled" : "Powered off"] };
         continue;
       }
-      const down = this.lifecycle.downReason(n.id);
+      if (this.incidents.isDormantDecoy(n.id)) {
+        out[n.id] = { status: "online", powered, isolated, reasons: [] };
+        continue;
+      }
+      const down = this.lifecycle.downReason(n.id) ?? this.incidents.encryptedReason(n.id);
       if (down) {
         out[n.id] = { status: "offline", powered, isolated, reasons: [down] };
         continue;
@@ -919,6 +998,11 @@ export class Simulation {
       }
       // Remote users and portal visitors appear as the Internet node; it is not "degraded".
       if (n.kind !== "internet") reasons.push(...new Set(asClient.get(n.id) ?? []));
+      const pwned = this.incidents.compromised(n.id);
+      if (pwned) {
+        out[n.id] = { status: "compromised", powered, isolated, reasons: [pwned, ...reasons].slice(0, 5) };
+        continue;
+      }
       out[n.id] = { status: reasons.length ? "degraded" : "online", powered, isolated, reasons: reasons.slice(0, 5) };
     }
     return out;

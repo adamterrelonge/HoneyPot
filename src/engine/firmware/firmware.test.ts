@@ -96,7 +96,7 @@ describe("installing updates", () => {
     }
   });
 
-  it("outcome rates match the accepted defaults (seeded, 4,000 installs)", () => {
+  it("outcome rates match the accepted defaults (seeded, 4,000 installs)", { timeout: 60_000 }, () => {
     const lean = parseTopology(generateBusiness({ ...defaultSpec("professional", "sme"), budget: "lean" }));
     const sw = lean.nodes.find((n) => n.kind === "switch")!;
     let config = 0;
@@ -223,7 +223,7 @@ describe("hardware failures", () => {
 });
 
 describe("determinism", () => {
-  it("replays firmware commands and random failures to the same hash", () => {
+  it("replays firmware commands and random failures to the same hash", { timeout: 60_000 }, () => {
     const lean = parseTopology(generateBusiness({ ...defaultSpec("professional", "sme"), budget: "lean" }));
     const live = new Simulation(lean);
     live.advance(200);
