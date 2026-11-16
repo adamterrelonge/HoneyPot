@@ -1,26 +1,117 @@
 @import "tailwindcss";
 
-/* Design tokens — keep in sync with build.md §4 and src/render/theme.ts */
+/*
+ * Design tokens: keep in sync with build.md §4 and src/render/theme.ts.
+ * Light values live in @theme; dark values override the same variables (Phase 8).
+ * The theme follows the system unless <html data-theme="light|dark"> forces one.
+ * Every text/background pair is checked for WCAG 2.2 AA by src/ui/contrast.test.ts.
+ *
+ * Semantic names (never raw white/black in components):
+ *   surface / surface-2  panel and control backgrounds
+ *   fill                 overlay tint for hover, wells and chips (use with /opacity)
+ *   --shade              "r g b" for hairline shadows: rgb(var(--shade)/0.08)
+ *   *-ink                status colours for TEXT (AA on surfaces and their own tints)
+ *   ok/warn/bad/...      status colours for dots, fills and tints (≥ 3:1 as graphics)
+ */
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter Variable", system-ui, sans-serif;
   --color-ink: #1d1d1f;
-  --color-ink-2: #6e6e73;
-  --color-ink-3: #86868b;
+  --color-ink-2: #515154;
+  --color-ink-3: #68686d;
   --color-canvas: #fbfbfd;
   --color-page: #f5f5f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0f0f3;
+  --color-fill: #000000;
   --color-accent: #0071e3;
-  --color-ok: #34c759;
-  --color-warn: #ff9f0a;
-  --color-bad: #ff3b30;
-  --color-pwned: #af52de;
+  --color-accent-hover: #0062c4;
+  --color-accent-ink: #0059b3;
+  --color-ok: #248a3d;
+  --color-ok-ink: #1d6b31;
+  --color-warn: #b86e00;
+  --color-warn-ink: #8a3b00;
+  --color-bad: #d70015;
+  --color-bad-ink: #a8000f;
+  --color-pwned: #8944ab;
+  --color-pwned-ink: #7a3a99;
+  --color-caution: #ffcc00;
+  --color-caution-ink: #6b5100;
   --color-hairline: rgb(0 0 0 / 0.08);
 }
 
+:root {
+  --shade: 0 0 0;
+  --glass: rgb(255 255 255 / 0.74);
+  --glass-border: rgb(0 0 0 / 0.1);
+  --body-glow: #ffffff;
+  color-scheme: light;
+}
+
+/* Dark values, shared by "follow the system" and the explicit dark choice (keep both blocks equal). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-ink: #f5f5f7;
+    --color-ink-2: #c7c7cc;
+    --color-ink-3: #a1a1a6;
+    --color-canvas: #161618;
+    --color-page: #0e0e10;
+    --color-surface: #1c1c1e;
+    --color-surface-2: #2c2c2e;
+    --color-fill: #ffffff;
+    --color-accent-hover: #0062c4;
+    --color-accent-ink: #4da3ff;
+    --color-ok: #30d158;
+    --color-ok-ink: #30d158;
+    --color-warn: #ff9f0a;
+    --color-warn-ink: #ffb340;
+    --color-bad: #d70015;
+    --color-bad-ink: #ff6961;
+    --color-pwned: #bf5af2;
+    --color-pwned-ink: #da8fff;
+    --color-caution: #ffd60a;
+    --color-caution-ink: #ffd60a;
+    --color-hairline: rgb(255 255 255 / 0.12);
+    --shade: 255 255 255;
+    --glass: rgb(28 28 30 / 0.8);
+    --glass-border: rgb(255 255 255 / 0.12);
+    --body-glow: #1f1f23;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --color-ink: #f5f5f7;
+  --color-ink-2: #c7c7cc;
+  --color-ink-3: #a1a1a6;
+  --color-canvas: #161618;
+  --color-page: #0e0e10;
+  --color-surface: #1c1c1e;
+  --color-surface-2: #2c2c2e;
+  --color-fill: #ffffff;
+  --color-accent-hover: #0062c4;
+  --color-accent-ink: #4da3ff;
+  --color-ok: #30d158;
+  --color-ok-ink: #30d158;
+  --color-warn: #ff9f0a;
+  --color-warn-ink: #ffb340;
+  --color-bad: #d70015;
+  --color-bad-ink: #ff6961;
+  --color-pwned: #bf5af2;
+  --color-pwned-ink: #da8fff;
+  --color-caution: #ffd60a;
+  --color-caution-ink: #ffd60a;
+  --color-hairline: rgb(255 255 255 / 0.12);
+  --shade: 255 255 255;
+  --glass: rgb(28 28 30 / 0.8);
+  --glass-border: rgb(255 255 255 / 0.12);
+  --body-glow: #1f1f23;
+  color-scheme: dark;
+}
+
 @utility glass {
-  background: rgb(255 255 255 / 0.72);
+  background: var(--glass);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 0.5px solid rgb(0 0 0 / 0.1);
+  border: 0.5px solid var(--glass-border);
   box-shadow: 0 8px 32px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
 }
 
@@ -33,16 +124,29 @@ body,
 }
 
 body {
-  background: radial-gradient(1200px 800px at 60% 40%, #ffffff 0%, var(--color-canvas) 55%, var(--color-page) 100%);
+  background: radial-gradient(1200px 800px at 60% 40%, var(--body-glow) 0%, var(--color-canvas) 55%, var(--color-page) 100%);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;
 }
 
+/* A clearly visible keyboard focus ring everywhere (WCAG 2.4.7). Mouse clicks don't show it. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
   }
 }
 

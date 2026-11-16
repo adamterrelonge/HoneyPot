@@ -810,3 +810,152 @@ What the new tests cover:
    incident), or tooltips on first use only?
 4. **Accessibility target:** aim for WCAG 2.2 AA throughout (the table view, focus order, contrast in both
    themes), or AA for panels only with the map as a visual extra?
+
+---
+
+## Phase 8 — Polish, accessibility & performance · 2026-11-16 · ✅ complete
+
+Decisions applied: saves stay loadable during games; dark mode follows the system *and* has a toggle; the tour is
+offered after creating a business (with "Don't ask again"), can be re-run from the New business menu, and ends by
+urging Play; WCAG 2.2 AA everywhere.
+
+### 1. Summary
+- **Dark mode.**
+  - Every colour is now a semantic token with light and dark values (`styles.css`). The theme
+    follows the system, or the top-bar toggle (◐ System → ☀ Light → ☾ Dark), which is remembered
+    per browser.
+  - A script migrated about 210 hard-coded colours across the UI to tokens.
+  - The canvas has its own dark palette: zone plates tinted from each zone's hue, dark label pills,
+    stronger ground shadows. It rebuilds when the theme changes.
+- **WCAG 2.2 AA.**
+  - **Contrast:** secondary text darkened (the old grey `#86868B` was 3.6:1). Light status dots
+    darkened to reach 3:1 as graphics. Separate `*-ink` text colours for status badges in both themes.
+  - **Keyboard:**
+    - A visible focus ring on every control.
+    - All four dialog types move focus in, trap Tab, and return focus on close.
+    - Hidden side panels are `inert`, so focus can't land in off-screen content.
+    - Space only pauses when it isn't operating a focused control.
+  - **Screen readers:**
+    - Named regions (Devices, Device details, Business services, Activity).
+    - The map is described as an image that points to its text equivalents.
+    - A polite live region announces new warnings and failures (batched).
+    - Labels added to the device search and business name.
+    - The Vulnerabilities badge reads "14 devices exposed".
+    - A heading-level fix in Policy.
+  - **Table view** (new **Table** button): the whole network as accessible tables.
+    - Devices: name, type, zone, address, live status, problems, firmware and CVE count. Each name
+      opens the inspector.
+    - Connections: type, capacity, state, load.
+  - **Skip links:** to the device list, and to open the table.
+  - **Reduced motion:** the OS setting removes camera glides, pulses, hover lifts, CSS transitions and
+    moving traffic dots.
+- **Guided tour** (`tour.tsx`):
+  - After **Create network** or **Use the sample business**, a "Take a quick tour?" card appears with
+    *Start tour*, *Not now* and a **Don't ask again** checkbox.
+  - The New business menu has **Take the tour** and the same checkbox.
+  - The ten steps spotlight the real UI: welcome, devices (advances by itself when you pick one),
+    acting on a device and undo, business services, Trace, Policy, Vulnerabilities, time and undo,
+    Saves, and finally **"Now defend it"**, which highlights Play and offers **▶ Play now** (opens
+    the Play sheet).
+  - The tour is a labelled, non-modal dialog that takes focus each step; Escape ends it.
+- **Performance pass.**
+  - An enterprise snapshot was 434 KB, and 80% of it was flows. The new snapshot transport (`worker/wire.ts`):
+    - sends flow identities only when the set of flows changes;
+    - sends paths only when they change;
+    - sends the per-flow numbers as typed arrays.
+  - Steady pushes are now 113 KB, and the UI rebuilds identical snapshots (tested).
+  - Fixed the simulation rebuilding every path on tick 1, and stopped the undo/redo buttons
+    re-rendering on every snapshot.
+
+### 2. Tests run
+| Command | Result |
+|---|---|
+| `npm run check` (typecheck app + engine, Vitest, `vite build`) | ✅ 158/158 tests (13 new), build OK |
+| `src/ui/contrast.test.ts` (new) | ✅ 10 tests, listed below |
+| `src/worker/wire.test.ts` (new) | ✅ 3 tests, listed below |
+
+What the new tests cover:
+- **`contrast.test.ts`**, for each theme:
+  - all text tokens are ≥ 4.5:1 on every surface;
+  - status text is ≥ 4.5:1 on its own 10–20% tint;
+  - white text on accent, hover and danger is ≥ 4.5:1;
+  - dots and fills are ≥ 3:1.
+  - The system-dark and forced-dark CSS blocks are identical.
+  - No component uses raw white/black or hex colours.
+- **`wire.test.ts`:**
+  - Exact round trip through `structuredClone`, across commands and an incident that adds a flow.
+  - Static parts and paths are sent once, and re-sent only on change.
+  - The enterprise steady push is under a third of a full snapshot (113 KB vs 434 KB).
+
+**Browser checks** (Chrome):
+- **Lighthouse accessibility:** 100 in light, 100 in dark, and 100 in dark with the Policy dialog
+  open. Fixed on the way: a label/name mismatch on the Vulnerabilities button, a skip link pointing
+  at an element that only exists once opened, and a skipped heading level.
+- **Tour:** the offer appeared after "Use the sample business" with focus on *Start tour*. Started
+  from **New business → Take the tour**, all 10 steps ran.
+  - Every card stayed in view.
+  - Each target was ringed.
+  - Focus moved to *Next* on each step.
+  - Picking Reception PC on step 2 advanced the tour.
+  - The last step offered *Finish / Back / ▶ Play now*.
+  - *Play now* opened the Play sheet with focus inside it.
+- **Theme:** the toggle went System → Light → Dark. `data-theme` and the saved preference updated,
+  and the map, panels and table all switched (screenshots reviewed).
+- **Reduced motion:** with Chrome emulating `prefers-reduced-motion: reduce`, the scene reported
+  reduced motion and hid the traffic dots.
+- **Performance** (enterprise, 800 staff, 5 sites, 219 nodes and 2,250 particles, intense free play
+  at 16×):
+  - Production build: **57 fps** over 10 s, one 51 ms long task.
+  - The dev server reads lower (about 44–49 fps) because development React does much more work per
+    render.
+  - Paused: 60 fps.
+- No console errors or warnings.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Start tour" did nothing | `tour.go()` set the step but left the offer showing, and the offer takes priority | `go()` clears the offer |
+| Secondary text failed AA (3.6:1); light status dots failed 3:1 | Apple system colours are tuned for look, not contrast | AA-checked tokens per theme, guarded by `contrast.test.ts` |
+| Contrast test found `ink-3` on `surface-2` at 4.46 and `accent-ink` on its tint at 4.48 | Values chosen by eye | Darkened to `#68686D` and `#0059B3` |
+| Vitest returned an empty string for `styles.css?raw` | Vitest stubs CSS imports | The test reads the file from disk; a tiny ambient type declares `node:fs` (no `@types/node`) |
+| Keyboard focus could land in off-screen panels | Panels were hidden by translating them away with `aria-hidden` only | `inert` when hidden |
+| Space paused the clock *and* pressed the focused button | The key handler only ignored text inputs | It ignores buttons, links, switches and form fields |
+| Traffic dots still jumped with reduced motion on | Streams are rebuilt with each snapshot, so frozen dots still change position | Dots are hidden under reduced motion |
+| Enterprise at 16× ran at 34–49 fps on the dev server | 442 KB snapshots copied 9×/s (~15 ms each), 78% of them flows | `wire.ts` sends static parts once and numbers as typed arrays |
+| Every flow path was rebuilt on tick 1 | `effectKey` started as `""` | Initialised in the constructor |
+| Paths looked "changed" every tick | Idle flows report `path: null`, so flickering flows resent their path | Paths are implied by status; only flows carrying traffic compare paths |
+| Undo/redo buttons re-rendered on every snapshot | The selector returned a new object each time | Separate primitive selectors |
+
+### 4. Known limitations / debt
+- **Automated checks aren't a full AA audit.** Lighthouse/axe and the contrast test catch a lot, but I
+  haven't tested with real screen readers (NVDA, VoiceOver), at 200–400% zoom (reflow), or in Windows
+  high-contrast mode. A manual pass is the honest next step before claiming conformance.
+- The map itself is pointer-only. Keyboard and screen-reader users work through the device list,
+  inspector and table view (equivalent, but not the same experience).
+- The tour explains each tool but doesn't check that the player did the suggested action (except
+  picking a device).
+- The layout targets desktop. Below about 1280 px wide the top bar crowds.
+- The dev server's fps is lower than production. Performance numbers in this diary are from
+  `vite preview`.
+
+### 5. Ideas for later
+- An "Accessibility" settings panel: larger text, high-contrast theme, reduce motion in-app (not just
+  from the OS), and keyboard shortcuts listed.
+- Keyboard navigation of the map itself: arrow keys move between neighbouring devices, Enter selects.
+- A tour per feature ("Show me Trace") from a Help menu, and a second tour for the first game.
+- Live-update the table only while visible, and virtualise it for very large businesses.
+- Push less often while paused or when the tab is hidden (saves battery).
+
+### 6. Hand-off: after the eight planned phases
+All eight phases in `build.md` are complete. Next steps are your call. Options, roughly in order of value:
+1. **Manual accessibility pass:** screen readers, zoom/reflow and high contrast, then fix what they find.
+2. **Content:** more scenarios, industries, products/CVEs and incident variants; a scenario editor.
+3. **Depth:** per-device state inside groups, attacker personalities, detection tools you can buy (EDR, SIEM).
+4. **Sharing beyond one browser:** export/import save files, a hosted version, multiplayer red vs blue.
+
+**Decisions needed from you:**
+1. Which direction next: accessibility audit, content, simulation depth, or sharing?
+2. The project folder isn't a git repository yet. Should I set one up and commit the work, as one
+   commit or one per phase?
+3. Should the app support smaller screens (tablet width), or stay desktop-only?
+4. Any CVE spot-check findings from the Phase 5 catalogue to correct?

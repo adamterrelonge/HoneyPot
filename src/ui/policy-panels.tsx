@@ -11,6 +11,7 @@ import { APP_IDS, type TraceStep } from "../engine/sim/types";
 import { emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { useDialogFocus } from "./a11y";
 
 const SERVICE_IDS = ["any", "dns", "directory", ...APP_IDS] as const;
 /** Apps that need a sign-in, i.e. the ones role permissions apply to. */
@@ -76,7 +77,7 @@ export function TracePanel({ width }: { width: number }) {
         <button
           onClick={end}
           aria-label="Close trace"
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
         >
           ✕
         </button>
@@ -100,7 +101,7 @@ export function TracePanel({ width }: { width: number }) {
           <select
             value={service ?? ""}
             onChange={(e) => update({ service: e.target.value || null, result: null })}
-            className="h-7 flex-1 rounded-[8px] bg-black/[0.05] px-2 text-[12px] text-ink outline-none"
+            className="h-7 flex-1 rounded-[8px] bg-fill/[0.05] px-2 text-[12px] text-ink outline-none"
           >
             <option value="">Automatic{result ? ` (${result.serviceLabel})` : ""}</option>
             {SERVICE_IDS.map((s) => (
@@ -117,23 +118,23 @@ export function TracePanel({ width }: { width: number }) {
           <>
             <div
               className={`mb-3 rounded-[12px] px-3 py-2 text-[12px] leading-snug ${
-                result.ok ? "bg-ok/12 text-[#1d6b31]" : "bg-bad/10 text-[#a8000f]"
+                result.ok ? "bg-ok/12 text-ok-ink" : "bg-bad/10 text-bad-ink"
               }`}
               role="status"
             >
               <b className="font-semibold">{result.ok ? "✓ Works" : "✗ Blocked"}</b> · {result.verdict}
             </div>
-            <ol className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+            <ol className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
               {result.steps.map((s, i) => (
                 <li key={i}>
                   <button
                     onClick={() => onStep(s)}
                     disabled={!s.ref}
-                    className="flex w-full items-start gap-2.5 px-3 py-2 text-left enabled:hover:bg-black/[0.03]"
+                    className="flex w-full items-start gap-2.5 px-3 py-2 text-left enabled:hover:bg-fill/[0.03]"
                   >
                     <span
                       className={`mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white ${
-                        s.ok === true ? "bg-ok" : s.ok === false ? "bg-bad" : "bg-black/15"
+                        s.ok === true ? "bg-ok" : s.ok === false ? "bg-bad" : "bg-fill/15"
                       }`}
                       aria-label={s.ok === true ? "passed" : s.ok === false ? "failed" : "not reached"}
                     >
@@ -172,7 +173,7 @@ const STEP_KIND: Record<TraceStep["kind"], string> = {
 
 function Endpoint({ label, node, onClear }: { label: string; node?: Topology["nodes"][number]; onClear: () => void }) {
   return (
-    <div className="flex h-10 items-center gap-2.5 rounded-[10px] bg-white/70 px-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+    <div className="flex h-10 items-center gap-2.5 rounded-[10px] bg-surface/70 px-3 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
       <span className="w-9 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{label}</span>
       {node ? (
         <>
@@ -203,7 +204,7 @@ function TraceShortcut({ onPick, topology, exclude }: { onPick: (id: string) => 
           <button
             key={n.id}
             onClick={() => onPick(n.id)}
-            className="flex items-center gap-1 rounded-full bg-black/[0.05] py-0.5 pr-2 pl-1 text-[11px] text-ink-2 hover:bg-black/[0.08]"
+            className="flex items-center gap-1 rounded-full bg-fill/[0.05] py-0.5 pr-2 pl-1 text-[11px] text-ink-2 hover:bg-fill/[0.08]"
           >
             <img src={emojiUrl(n.kind)} alt="" className="h-4 w-4" />
             {n.label}
@@ -228,19 +229,25 @@ export function PolicySheet() {
   }, [tab, setTab]);
 
   if (!tab) return null;
+  return <PolicyDialog tab={tab} setTab={setTab} />;
+}
+
+function PolicyDialog({ tab, setTab }: { tab: "rules" | "access"; setTab: (t: "rules" | "access" | null) => void }) {
+  const dialogRef = useDialogFocus<HTMLDivElement>(true);
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-white/30 p-6 backdrop-blur-[4px]"
+      ref={dialogRef}
+      className="absolute inset-0 z-40 flex items-center justify-center bg-surface/30 p-6 backdrop-blur-[4px]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="policy-title"
       onMouseDown={(e) => e.target === e.currentTarget && setTab(null)}
     >
-      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-white/85">
+      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-3">
           <img src="/emoji/shield.png" alt="" className="h-8 w-8" />
           <h1 id="policy-title" className="flex-1 text-[20px] font-semibold tracking-tight">Policy</h1>
-          <div className="flex rounded-[10px] bg-black/[0.05] p-0.5" role="tablist">
+          <div className="flex rounded-[10px] bg-fill/[0.05] p-0.5" role="tablist">
             {(["rules", "access"] as const).map((t) => (
               <button
                 key={t}
@@ -248,7 +255,7 @@ export function PolicySheet() {
                 aria-selected={tab === t}
                 onClick={() => setTab(t)}
                 className={`h-8 rounded-[8px] px-3 text-[12px] font-semibold ${
-                  tab === t ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-ink-2 hover:text-ink"
+                  tab === t ? "bg-surface text-ink shadow-[0_1px_3px_rgb(var(--shade)/0.12)]" : "text-ink-2 hover:text-ink"
                 }`}
               >
                 {t === "rules" ? "Firewall rules" : "Access & MFA"}
@@ -258,7 +265,7 @@ export function PolicySheet() {
           <button
             onClick={() => setTab(null)}
             aria-label="Close policy"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
           >
             ✕
           </button>
@@ -284,7 +291,7 @@ function RulesTab() {
         decides. Traffic inside a zone isn't filtered. If nothing matches, inbound connections from the internet are
         denied and everything else is allowed.
       </p>
-      <ol className="divide-y divide-hairline overflow-hidden rounded-[14px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <ol className="divide-y divide-hairline overflow-hidden rounded-[14px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
         {rules.length === 0 && (
           <li className="px-4 py-5 text-center text-[12px] text-ink-3">No rules: a flat network on the default policy. Add one below.</li>
         )}
@@ -298,7 +305,7 @@ function RulesTab() {
             />
             <span
               className={`w-[46px] rounded-full py-0.5 text-center text-[10px] font-bold uppercase ${
-                r.action === "allow" ? "bg-ok/15 text-[#1d6b31]" : "bg-bad/12 text-[#a8000f]"
+                r.action === "allow" ? "bg-ok/15 text-ok-ink" : "bg-bad/12 text-bad-ink"
               }`}
             >
               {r.action}
@@ -311,7 +318,7 @@ function RulesTab() {
               </span>
             </span>
             {(blocking?.[r.id] ?? 0) > 0 && (
-              <span className="rounded-full bg-bad/10 px-2 py-0.5 text-[10px] font-semibold text-[#a8000f]">
+              <span className="rounded-full bg-bad/10 px-2 py-0.5 text-[10px] font-semibold text-bad-ink">
                 blocking {blocking![r.id]!.toLocaleString()} users
               </span>
             )}
@@ -365,17 +372,17 @@ function AddRule({ topology }: { topology: Topology }) {
       })
       .then((r) => r.ok && setName(""));
   };
-  const select = "h-8 min-w-0 flex-1 rounded-[8px] bg-black/[0.05] px-2 text-[12px] outline-none";
+  const select = "h-8 min-w-0 flex-1 rounded-[8px] bg-fill/[0.05] px-2 text-[12px] outline-none";
   return (
-    <section className="mt-4 rounded-[14px] bg-black/[0.03] p-3">
-      <h3 className="pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Add a rule</h3>
+    <section className="mt-4 rounded-[14px] bg-fill/[0.03] p-3">
+      <h2 className="pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Add a rule</h2>
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Name (optional)"
           aria-label="Rule name"
-          className="h-8 w-[180px] rounded-[8px] bg-white px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-accent/25"
+          className="h-8 w-[180px] rounded-[8px] bg-surface px-2 text-[12px] outline-none focus:ring-[3px] focus:ring-accent/25"
         />
         <Segment value={action} options={["deny", "allow"]} onChange={(v) => setAction(v as "allow" | "deny")} />
         <select aria-label="From" className={select} value={from} onChange={(e) => setFrom(e.target.value)}>
@@ -395,7 +402,7 @@ function AddRule({ topology }: { topology: Topology }) {
           ))}
         </select>
         <Segment value={position} options={["top", "bottom"]} onChange={(v) => setPosition(v as "top" | "bottom")} />
-        <button onClick={add} className="h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-[#0077ed]">
+        <button onClick={add} className="h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-accent-hover">
           Add rule
         </button>
       </div>
@@ -434,7 +441,7 @@ function AccessTab() {
         MFA doesn't change everyday traffic; it decides how far a stolen password gets an attacker. Change a device's
         role from the inspector.
       </p>
-      <div className="overflow-hidden rounded-[14px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <div className="overflow-hidden rounded-[14px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
         <table className="w-full text-left text-[12px]">
           <thead>
             <tr className="text-[11px] uppercase tracking-[0.06em] text-ink-3">
@@ -470,7 +477,7 @@ function AccessTab() {
                         value={v}
                         onChange={(e) => void sim.dispatch({ type: "identity.setAccess", role, app, access: e.target.value as Access })}
                         className={`h-7 rounded-[7px] px-1.5 text-[12px] outline-none ${
-                          v === "none" ? "bg-bad/10 text-[#a8000f]" : "bg-black/[0.05]"
+                          v === "none" ? "bg-bad/10 text-bad-ink" : "bg-fill/[0.05]"
                         }`}
                       >
                         {ACCESS_LEVELS.map((a) => (
@@ -501,10 +508,10 @@ export function Switch({ on, onChange, label }: { on: boolean; onChange: (on: bo
       aria-label={label}
       title={label}
       onClick={() => onChange(!on)}
-      className={`relative h-[18px] w-[30px] shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-ok" : "bg-black/15"}`}
+      className={`relative h-[18px] w-[30px] shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-ok" : "bg-fill/15"}`}
     >
       <span
-        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] duration-200 ${
+        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-surface shadow-[0_1px_2px_rgb(var(--shade)/0.25)] transition-[left] duration-200 ${
           on ? "left-[14px]" : "left-[2px]"
         }`}
       />
@@ -521,7 +528,7 @@ function IconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-[12px] text-ink-2 hover:bg-black/[0.05] disabled:opacity-25"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-[12px] text-ink-2 hover:bg-fill/[0.05] disabled:opacity-25"
     >
       {children}
     </button>
@@ -530,14 +537,14 @@ function IconButton({
 
 function Segment({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
   return (
-    <div className="flex rounded-[8px] bg-black/[0.05] p-0.5">
+    <div className="flex rounded-[8px] bg-fill/[0.05] p-0.5">
       {options.map((o) => (
         <button
           key={o}
           onClick={() => onChange(o)}
           aria-pressed={o === value}
           className={`h-7 rounded-[6px] px-2.5 text-[11px] font-semibold capitalize ${
-            o === value ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-ink-2"
+            o === value ? "bg-surface text-ink shadow-[0_1px_3px_rgb(var(--shade)/0.12)]" : "text-ink-2"
           }`}
         >
           {o}

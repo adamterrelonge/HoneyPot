@@ -26,16 +26,7 @@ import { SEVERITY_RANK, advisoryByCve, type Severity } from "../engine/firmware/
 import type { FlowState, Snapshot, TraceResult } from "../engine/sim/types";
 import { TILE_W, boundsOf, depth, project, rectCorners, tileCentre, type Pt } from "./geometry";
 import { cumulative, pointAlong, routeLinks, type LinkRoute } from "./routing";
-import {
-  CATEGORY_COLORS,
-  COLORS,
-  FONT_STACK,
-  MEDIUM_STYLE,
-  NODE_ART,
-  STATUS_COLORS,
-  ZONE_STYLE,
-  emojiUrl,
-} from "./theme";
+import { FONT_STACK, MEDIUM_STYLE, NODE_ART, PALETTES, emojiUrl, type Palette } from "./theme";
 
 export interface SceneEvents {
   onSelect(id: string | null): void;
@@ -128,6 +119,7 @@ export class NetworkScene {
   private traceG = new SmoothGraphics();
   private traceResult: TraceResult | null = null;
   private riskLens = false;
+  private reducedMotion = false;
   private particles = new ParticleContainer({ dynamicProperties: { position: true, color: true } });
   private nodeLayer = new Container({ sortableChildren: true });
   private labelLayer = new Container();
@@ -158,7 +150,19 @@ export class NetworkScene {
   private userMoved = false;
   private time = 0;
 
-  constructor(private readonly events: SceneEvents) {}
+  constructor(
+    private readonly events: SceneEvents,
+    /** Light or dark colours; the canvas is rebuilt when the theme changes. */
+    private readonly pal: Palette = PALETTES.light,
+  ) {}
+
+  /** Honour the OS "reduce motion" setting: no gliding camera, pulsing or moving particles. */
+  setReducedMotion(on: boolean): void {
+    this.reducedMotion = on;
+    // Moving dots are the main motion on screen. Traffic stays visible through cable colour
+    // and width, the services panel and the table view.
+    this.particles.visible = !on;
+  }
 
   mount(host: HTMLElement, topology: Topology): Promise<void> {
     this.ready = (async () => {
@@ -325,13 +329,13 @@ export class NetworkScene {
       const b = project(maxX, y);
       g.moveTo(a.x, a.y).lineTo(b.x, b.y);
     }
-    g.stroke({ width: 1, color: COLORS.hairline, alpha: 0.045, pixelLine: true });
+    g.stroke({ width: 1, color: this.pal.hairline, alpha: this.pal.gridAlpha, pixelLine: true });
   }
 
   private drawZones(t: Topology): void {
     const g = this.floorG;
     for (const z of t.zones) {
-      const style = ZONE_STYLE[z.kind];
+      const style = this.pal.zones[z.kind];
       const [T, R, B, L] = rectCorners(z.origin.x, z.origin.y, z.size.w, z.size.h);
       const d = ZONE_THICKNESS;
       // Front faces give the floor plate a little thickness.
@@ -356,7 +360,7 @@ export class NetworkScene {
       // Label lying flat on the floor along the front-left edge.
       const label = new Text({
         text: z.name.toUpperCase(),
-        style: { fontFamily: FONT_STACK, fontSize: 15, fontWeight: "600", letterSpacing: 2.5, fill: COLORS.ink3 },
+        style: { fontFamily: FONT_STACK, fontSize: 15, fontWeight: "600", letterSpacing: 2.5, fill: this.pal.ink3 },
         resolution: 4,
       });
       label.anchor.set(0, 1);
@@ -408,11 +412,11 @@ export class NetworkScene {
       if (!r || decoys[l.a] === false || decoys[l.b] === false) continue;
       const s = links?.[l.id];
       const dashed = MEDIUM_STYLE[l.medium].dashed;
-      if (s?.state === "down") this.strokeRoute(this.linkDownG, r, STATUS_COLORS.offline, 0.85);
-      else if (s?.state === "blocked") this.strokeRoute(this.linkDashG, r, COLORS.link, 0.3);
+      if (s?.state === "down") this.strokeRoute(this.linkDownG, r, this.pal.status.offline, 0.85);
+      else if (s?.state === "blocked") this.strokeRoute(this.linkDashG, r, this.pal.link, 0.3);
       else {
         const u = s?.util ?? 0;
-        const color = u >= 1 ? STATUS_COLORS.offline : u >= 0.8 ? STATUS_COLORS.degraded : COLORS.link;
+        const color = u >= 1 ? this.pal.status.offline : u >= 0.8 ? this.pal.status.degraded : this.pal.link;
         const alpha = u >= 0.8 ? 0.9 : s && u <= 0.001 ? 0.4 : 0.6;
         this.strokeRoute(dashed ? this.linkDashG : this.linkG, r, color, alpha);
       }
@@ -428,15 +432,15 @@ export class NetworkScene {
 
     const ring = new SmoothGraphics()
       .ellipse(0, 0, 36, 18)
-      .fill({ color: COLORS.accent, alpha: 0.08 })
+      .fill({ color: this.pal.accent, alpha: 0.08 })
       .ellipse(0, 0, 36, 18)
-      .stroke({ width: 1.5, color: COLORS.accent, pixelLine: true });
+      .stroke({ width: 1.5, color: this.pal.accent, pixelLine: true });
     ring.alpha = 0;
 
     const shadow = new Graphics();
     const k = art.size / 60;
     for (const [rx, ry, a] of [[26, 11, 0.05], [19, 8, 0.07], [12, 5, 0.09]] as const) {
-      shadow.ellipse(0, 0, rx * k, ry * k).fill({ color: COLORS.shadow, alpha: a });
+      shadow.ellipse(0, 0, rx * k, ry * k).fill({ color: this.pal.shadow, alpha: Math.min(1, a * this.pal.shadowAlpha) });
     }
 
     const body = new Container();
@@ -509,9 +513,9 @@ export class NetworkScene {
       v.root.visible = this.snap?.game?.decoys[id] !== false;
       const device = this.snap?.devices?.[id];
       const updating = device?.condition === "updating";
-      const color = s.isolated ? COLORS.ink3 : updating ? COLORS.accent : s.status === "online" ? null : STATUS_COLORS[s.status];
+      const color = s.isolated ? this.pal.ink3 : updating ? this.pal.accent : s.status === "online" ? null : this.pal.status[s.status];
       v.dot.visible = color !== null;
-      if (color !== null) v.dot.clear().circle(0, 0, 5.5).fill(0xffffff).circle(0, 0, 4).fill(color);
+      if (color !== null) v.dot.clear().circle(0, 0, 5.5).fill(this.pal.surface).circle(0, 0, 4).fill(color);
       v.statusAlpha = updating ? 0.6 : s.status === "offline" ? 0.38 : 1;
       // Risk lens.
       let worst: Severity | null = null;
@@ -531,16 +535,16 @@ export class NetworkScene {
     const box = new Container();
     const t = new Text({
       text,
-      style: { fontFamily: FONT_STACK, fontSize: 11, fontWeight: "500", letterSpacing: -0.1, fill: COLORS.ink },
+      style: { fontFamily: FONT_STACK, fontSize: 11, fontWeight: "500", letterSpacing: -0.1, fill: this.pal.ink },
       resolution: 4,
     });
     t.anchor.set(0.5, 0.5);
     const w = Math.ceil(t.width) + 14;
     const bg = new SmoothGraphics()
       .roundRect(-w / 2, -9, w, 18, 9)
-      .fill({ color: 0xffffff, alpha: 0.86 })
+      .fill({ color: this.pal.surface, alpha: 0.86 })
       .roundRect(-w / 2, -9, w, 18, 9)
-      .stroke({ width: 1, color: COLORS.hairline, alpha: 0.08, pixelLine: true });
+      .stroke({ width: 1, color: this.pal.hairline, alpha: 0.08, pixelLine: true });
     box.addChild(bg, t);
     return box;
   }
@@ -558,9 +562,9 @@ export class NetworkScene {
     const w = Math.max(18, Math.ceil(t.width) + 10);
     const bg = new SmoothGraphics()
       .roundRect(-w / 2, -8, w, 16, 8)
-      .fill({ color: COLORS.ink, alpha: 0.82 })
+      .fill({ color: this.pal.badge, alpha: 0.9 })
       .roundRect(-w / 2, -8, w, 16, 8)
-      .stroke({ width: 1.5, color: 0xffffff, alpha: 0.9 });
+      .stroke({ width: 1.5, color: this.pal.surface, alpha: 0.9 });
     box.addChild(bg, t);
     return box;
   }
@@ -570,12 +574,12 @@ export class NetworkScene {
     const box = new Container();
     const title = new Text({
       text: name,
-      style: { fontFamily: FONT_STACK, fontSize: 13, fontWeight: "600", fill: COLORS.ink, letterSpacing: -0.1 },
+      style: { fontFamily: FONT_STACK, fontSize: 13, fontWeight: "600", fill: this.pal.ink, letterSpacing: -0.1 },
       resolution: 3,
     });
     const sub = new Text({
       text: `${devices.toLocaleString()} device${devices === 1 ? "" : "s"}`,
-      style: { fontFamily: FONT_STACK, fontSize: 11, fontWeight: "500", fill: COLORS.ink3 },
+      style: { fontFamily: FONT_STACK, fontSize: 11, fontWeight: "500", fill: this.pal.ink3 },
       resolution: 3,
     });
     title.anchor.set(0.5, 1);
@@ -585,9 +589,9 @@ export class NetworkScene {
     const w = Math.ceil(Math.max(title.width, sub.width)) + 22;
     const bg = new SmoothGraphics()
       .roundRect(-w / 2, -20, w, 40, 12)
-      .fill({ color: 0xffffff, alpha: 0.9 })
+      .fill({ color: this.pal.surface, alpha: 0.9 })
       .roundRect(-w / 2, -20, w, 40, 12)
-      .stroke({ width: 1, color: COLORS.hairline, alpha: 0.1, pixelLine: true });
+      .stroke({ width: 1, color: this.pal.hairline, alpha: 0.1, pixelLine: true });
     box.addChild(bg, title, sub);
     return box;
   }
@@ -625,7 +629,7 @@ export class NetworkScene {
         length: geom.length,
         count: clamp(Math.round(geom.length / spacing), 1, 40),
         phase: prev?.phase ?? (next.length * 0.618) % 1,
-        tint: f.status === "degraded" ? STATUS_COLORS.degraded : CATEGORY_COLORS[APP_INFO[f.app].category],
+        tint: f.status === "degraded" ? this.pal.status.degraded : this.pal.categories[APP_INFO[f.app].category],
       });
     }
     // Respect the particle budget by thinning every stream proportionally.
@@ -654,7 +658,7 @@ export class NetworkScene {
   }
 
   private animateParticles(dt: number): void {
-    const v = this.running ? PARTICLE_SPEED * Math.sqrt(this.speed) : 0;
+    const v = this.running && !this.reducedMotion ? PARTICLE_SPEED * Math.sqrt(this.speed) : 0;
     const sel = this.selected;
     let i = 0;
     for (const s of this.streams) {
@@ -689,7 +693,7 @@ export class NetworkScene {
         if (l.a !== id && l.b !== id) continue;
         this.related.add(l.a).add(l.b);
         const r = this.routes.get(l.id);
-        if (r) this.strokeRoute(hi, r, COLORS.accent, alpha);
+        if (r) this.strokeRoute(hi, r, this.pal.accent, alpha);
       }
     };
     if (this.hovered && this.hovered !== this.selected) draw(this.hovered, 0.5);
@@ -719,8 +723,8 @@ export class NetworkScene {
           for (let k = 1; k < piece.length; k++) g.lineTo(piece[k]!.x, piece[k]!.y);
         }
         // Works: green. Broken at a link/device: blue up to the break, red at it. Blocked by policy: all red.
-        const okColor = t.ok ? STATUS_COLORS.online : t.failed ? COLORS.accent : STATUS_COLORS.offline;
-        const color = state === "ok" ? okColor : state === "bad" ? STATUS_COLORS.offline : COLORS.link;
+        const okColor = t.ok ? this.pal.status.online : t.failed ? this.pal.accent : this.pal.status.offline;
+        const color = state === "ok" ? okColor : state === "bad" ? this.pal.status.offline : this.pal.link;
         g.stroke({ width: state === "after" ? 1.5 : 3, color, alpha: state === "after" ? 0.5 : 0.95, cap: "round", join: "round" });
       }
       if (state === "bad") state = "after";
@@ -797,7 +801,7 @@ export class NetworkScene {
   private tick = (ticker: Ticker): void => {
     const dt = ticker.deltaMS;
     this.time += dt / 1000;
-    const k = 1 - Math.exp(-dt / 90);
+    const k = this.reducedMotion ? 1 : 1 - Math.exp(-dt / 90);
     this.cam.x += (this.target.x - this.cam.x) * k;
     this.cam.y += (this.target.y - this.cam.y) * k;
     this.cam.s += (this.target.s - this.cam.s) * k;
@@ -806,7 +810,7 @@ export class NetworkScene {
 
     this.animateParticles(dt / 1000);
 
-    const ease = 1 - Math.exp(-dt / 70);
+    const ease = this.reducedMotion ? 1 : 1 - Math.exp(-dt / 70);
     const labelZoomAlpha = clamp((this.cam.s - OVERVIEW_ZOOM) / 0.15, 0, 1);
     const groupExpand = clamp((this.cam.s - GROUP_EXPAND_ZOOM) / 0.3, 0, 1);
     for (const { tag, zoneWidth, tagWidth } of this.zoneTags) {
@@ -839,7 +843,7 @@ export class NetworkScene {
       v.ringAlpha += ((isSel ? 1 : 0) - v.ringAlpha) * ease;
       v.ring.alpha = v.ringAlpha;
       v.ring.visible = v.ringAlpha > 0.01; // alpha-0 objects still cost a draw call
-      if (isSel) v.ring.scale.set(1 + Math.sin(this.time * 3) * 0.035);
+      if (isSel && !this.reducedMotion) v.ring.scale.set(1 + Math.sin(this.time * 3) * 0.035);
 
       v.alpha += ((lit ? 1 : 0.35) - v.alpha) * ease;
       v.root.alpha = v.alpha;

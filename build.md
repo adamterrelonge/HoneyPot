@@ -90,14 +90,32 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
 - **Colour is meaning, not decoration.** Neutral greys everywhere, with Apple system colours only
   for state:
 
-| Token | Hex | Use |
-|---|---|---|
-| `--accent` | `#0071E3` | selection, primary action |
-| `--ok` | `#34C759` | online / healthy |
-| `--warn` | `#FF9F0A` | degraded / at risk |
-| `--bad` | `#FF3B30` | offline / failed |
-| `--pwned` | `#AF52DE` | compromised |
-| `--text-1/2/3` | `#1D1D1F / #6E6E73 / #86868B` | text hierarchy |
+**Tokens (Phase 8).** `src/styles.css` is the source of truth, and `src/ui/contrast.test.ts` checks
+every pair for WCAG 2.2 AA in both themes. Components use semantic tokens only; that test fails on
+raw `white`/`black` or hex colours.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `ink / ink-2 / ink-3` | `#1D1D1F / #515154 / #68686D` | `#F5F5F7 / #C7C7CC / #A1A1A6` | text hierarchy (all ≥ 4.5:1) |
+| `surface / surface-2` | `#FFFFFF / #F0F0F3` | `#1C1C1E / #2C2C2E` | panels, controls |
+| `canvas / page` | `#FBFBFD / #F5F5F7` | `#161618 / #0E0E10` | background |
+| `fill` (with /opacity) | black | white | hover, wells, chips |
+| `accent` | `#0071E3` | `#0071E3` | primary fills (white text 4.7:1); hover `#0062C4` |
+| `accent-ink` | `#0059B3` | `#4DA3FF` | links and accent text |
+| `ok` / `ok-ink` | `#248A3D` / `#1D6B31` | `#30D158` / `#30D158` | healthy dot / text |
+| `warn` / `warn-ink` | `#B86E00` / `#8A3B00` | `#FF9F0A` / `#FFB340` | degraded dot / text |
+| `bad` / `bad-ink` | `#D70015` / `#A8000F` | `#D70015` / `#FF6961` | failed fill / text |
+| `pwned` / `pwned-ink` | `#8944AB` / `#7A3A99` | `#BF5AF2` / `#DA8FFF` | compromised |
+| `caution` / `caution-ink` | `#FFCC00` / `#6B5100` | `#FFD60A` / `#FFD60A` | medium severity |
+
+The light status dots are darker than Apple's system colours (e.g. ok `#248A3D`, not `#34C759`) so
+they reach 3:1 against white, as WCAG 1.4.11 requires for meaningful graphics. The canvas has its
+own light and dark `Palette` in `render/theme.ts`; dark zone plates are each zone's hue mixed 13%
+into `#1C1C1E`.
+
+- **Theme:** follows the system by default. The top-bar toggle cycles System → Light → Dark and is
+  remembered per browser. `<html data-theme>` forces a choice; no attribute means "follow the system".
+- **Focus:** every control shows a 2px accent outline on keyboard focus (`:focus-visible`).
 
 - **Zones** are soft-tinted floor plates (`internet` blue, `edge` peach, `server` lavender,
   `office` mint, `branch` sand, `cloud` sky) with a hairline outline and a small caps label.
@@ -117,6 +135,9 @@ native emoji fonts look different on every OS. We therefore use **Microsoft Flue
 - **Traffic** is shown as small dots moving along cables in the bulk direction: blue for staff apps,
   indigo for external users, green for voice, teal for system traffic (backup, CCTV) and orange when degraded.
 - **Motion.** Ease-out curves of 150–250ms. Nodes lift slightly on hover. No bouncy springs.
+  With the OS "reduce motion" setting, the camera jumps instead of gliding, nothing pulses or lifts,
+  CSS transitions are off and traffic dots are hidden. Load still shows through cable colour and
+  width, the services panel and the table view.
 
 ---
 
@@ -144,13 +165,16 @@ src/
     incidents/   catalog.ts (10 incident kinds, actions, costs, scenarios), engine.ts (kill chains, detection, scoring),
                  report.ts (after-action report as Markdown)
     save/        save.ts (save format, business refs, restore + hash check)
-  worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
+  worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink);
+                 wire.ts: compact snapshot transport (static parts once, numbers as typed arrays)
   render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
   state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade, autosaves)
   persist/       db.ts (IndexedDB save slots), share.ts (share codes)
   ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx,
                  lifecycle-panels.tsx, game-panels.tsx (Play sheet, HUD, incidents, after-action report),
-                 save-panels.tsx (undo/redo, Saves sheet, notices)
+                 save-panels.tsx (undo/redo, Saves sheet, notices), tour.tsx (guided tour),
+                 a11y-panels.tsx (theme toggle, table view, skip links, live announcer), a11y.ts (dialog focus)
+  state/prefs.ts per-browser preferences: theme, reduced motion, "Don't ask again"
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -548,9 +572,26 @@ criteria pass and a diary entry exists.
 - **Done when:** a restored save carries on identically to the original; every undoable command
   round-trips; share codes decode to the same hash.
 
-### Phase 8 — Polish, accessibility & performance
-- Accessible table view that mirrors the canvas, keyboard navigation, reduced-motion support,
-  dark mode, guided tutorial scenario, performance budget pass.
+### Phase 8 — Polish, accessibility & performance ✅ (2026-11-16)
+- Dark mode (system plus a manual toggle), AA tokens with an automated contrast test, and reduced motion.
+- Accessibility:
+  - A table view mirroring the map (devices and connections, live status).
+  - Skip links; labelled regions; dialogs that move, trap and restore focus.
+  - Hidden panels made `inert`; serious alerts announced through a polite live region.
+- Guided tour (10 steps):
+  - Offered after creating a business, with "Don't ask again".
+  - Available any time from the New business menu.
+  - Ends with "▶ Play now".
+- Performance: snapshot transport sends flow identity and paths only when they change, and the
+  numbers as typed arrays. An enterprise push drops from 434 KB to 113 KB.
+- Decisions: loading saves stays free during games; dark mode both system and toggle; tour after
+  New business with "Don't ask again", re-runnable from the New business menu, urging Play at the
+  end; WCAG 2.2 AA everywhere.
+- **Done when:**
+  - Contrast tests pass in both themes.
+  - Lighthouse accessibility scores 100 in light and dark (including with a dialog open).
+  - The tour runs end to end.
+  - The enterprise holds ~60 fps in the production build at 16× with incidents running.
 
 ---
 

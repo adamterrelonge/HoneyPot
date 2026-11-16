@@ -10,6 +10,8 @@ import {
 } from "../engine/gen/spec";
 import { BUDGETS, BUSINESS_SIZES, COMPLIANCE, HOSTING, INDUSTRIES, type BusinessSize, type Industry } from "../engine/model";
 import { sampleTopology, useApp } from "../state/store";
+import { useDialogFocus } from "./a11y";
+import { DontAskAgain, tour } from "./tour";
 import { formatRate } from "./sim-panels";
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -27,6 +29,7 @@ export function Wizard() {
   const [spec, setSpec] = useState<BusinessSpec>(() => defaultSpec("professional", "sme", 1337));
   const [nameTouched, setNameTouched] = useState(false);
   const [complianceTouched, setComplianceTouched] = useState(false);
+  const dialogRef = useDialogFocus<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!open) return;
@@ -63,7 +66,10 @@ export function Wizard() {
   };
   const create = () => {
     const parsed = BusinessSpecSchema.safeParse(spec);
-    if (parsed.success) loadBusiness(generateBusiness(parsed.data));
+    if (parsed.success) {
+      loadBusiness(generateBusiness(parsed.data));
+      tour.offer();
+    }
   };
 
   const [staffLo, staffHi] = STAFF_RANGE[spec.size];
@@ -73,12 +79,13 @@ export function Wizard() {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-white/35 p-6 backdrop-blur-[6px]"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-surface/35 p-6 backdrop-blur-[6px]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="wizard-title"
+      ref={dialogRef}
     >
-      <div className="glass flex max-h-full w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] bg-white/85">
+      <div className="glass flex max-h-full w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-start gap-3 px-7 pt-6 pb-4">
           <img src="/emoji/honeypot.png" alt="" className="h-10 w-10" />
           <div className="flex-1">
@@ -86,11 +93,20 @@ export function Wizard() {
             <p className="text-[13px] text-ink-2">
               Describe the organisation and Honeypot will build its network, traffic and weak spots.
             </p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button
+                onClick={() => tour.start()}
+                className="h-7 rounded-[8px] bg-accent/10 px-2.5 text-[12px] font-semibold text-accent-ink hover:bg-accent/15"
+              >
+                Take the tour
+              </button>
+              <DontAskAgain />
+            </div>
           </div>
           <button
             onClick={() => setOpen(false)}
             aria-label="Close"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
           >
             ✕
           </button>
@@ -107,11 +123,11 @@ export function Wizard() {
                 }}
                 maxLength={60}
                 aria-label="Business name"
-                className="h-9 flex-1 rounded-[10px] bg-black/[0.045] px-3 text-[14px] outline-none focus:bg-white focus:ring-[3px] focus:ring-accent/25"
+                className="h-9 flex-1 rounded-[10px] bg-fill/[0.045] px-3 text-[14px] outline-none focus:bg-surface focus:ring-[3px] focus:ring-accent/25"
               />
               <button
                 onClick={surprise}
-                className="h-9 rounded-[10px] bg-black/[0.05] px-3 text-[13px] font-medium text-ink-2 hover:bg-black/[0.08]"
+                className="h-9 rounded-[10px] bg-fill/[0.05] px-3 text-[13px] font-medium text-ink-2 hover:bg-fill/[0.08]"
               >
                 🎲 Surprise me
               </button>
@@ -130,8 +146,8 @@ export function Wizard() {
                     aria-pressed={on}
                     className={`flex flex-col items-start rounded-[14px] p-3 text-left transition-all ${
                       on
-                        ? "bg-white shadow-[0_0_0_2px_var(--color-accent),0_4px_14px_rgba(0,113,227,0.15)]"
-                        : "bg-white/60 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)] hover:bg-white"
+                        ? "bg-surface shadow-[0_0_0_2px_var(--color-accent),0_4px_14px_rgba(0,113,227,0.15)]"
+                        : "bg-surface/60 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)] hover:bg-surface"
                     }`}
                   >
                     <img src={info.icon} alt="" className="h-9 w-9" />
@@ -168,7 +184,7 @@ export function Wizard() {
 
             <Field label="Sites">
               <div className="flex items-center gap-3">
-                <div className="flex items-center rounded-[10px] bg-black/[0.05] p-0.5">
+                <div className="flex items-center rounded-[10px] bg-fill/[0.05] p-0.5">
                   <StepButton
                     label="Fewer sites"
                     onClick={() => patch({ sites: clamp(spec.sites - 1, siteLo, siteHi) })}
@@ -227,7 +243,7 @@ export function Wizard() {
                       patch({ compliance: on ? spec.compliance.filter((x) => x !== c) : [...spec.compliance, c] });
                     }}
                     className={`flex h-8 items-center gap-1.5 rounded-full px-3 text-[12px] font-medium transition-colors ${
-                      on ? "bg-accent text-white" : "bg-black/[0.05] text-ink-2 hover:bg-black/[0.08]"
+                      on ? "bg-accent text-white" : "bg-fill/[0.05] text-ink-2 hover:bg-fill/[0.08]"
                     }`}
                   >
                     <span className="text-[10px]">{on ? "✓" : "+"}</span>
@@ -244,10 +260,10 @@ export function Wizard() {
           </Field>
         </div>
 
-        <footer className="flex flex-wrap items-center gap-3 border-t border-hairline bg-white/60 px-7 py-4">
+        <footer className="flex flex-wrap items-center gap-3 border-t border-hairline bg-surface/60 px-7 py-4">
           <div className="min-w-0 flex-1 text-[12px] text-ink-2" aria-live="polite">
             {"error" in preview ? (
-              <span className="text-[#d70015]">{preview.error}</span>
+              <span className="text-bad-ink">{preview.error}</span>
             ) : (
               <>
                 <b className="font-semibold text-ink">≈ {preview.summary.devices.toLocaleString()} devices</b> ·{" "}
@@ -261,20 +277,23 @@ export function Wizard() {
               useApp.getState().setWizardOpen(false);
               useApp.getState().setSavesOpen(true);
             }}
-            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent hover:bg-accent/10"
+            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent-ink hover:bg-accent/10"
           >
             Open a save…
           </button>
           <button
-            onClick={() => loadBusiness(sampleTopology)}
-            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent hover:bg-accent/10"
+            onClick={() => {
+              loadBusiness(sampleTopology);
+              tour.offer();
+            }}
+            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent-ink hover:bg-accent/10"
           >
             Use the sample business
           </button>
           <button
             onClick={create}
             disabled={"error" in preview}
-            className="h-9 rounded-[10px] bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(0,113,227,0.3)] hover:bg-[#0077ed] disabled:opacity-40"
+            className="h-9 rounded-[10px] bg-accent px-4 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(0,113,227,0.3)] hover:bg-accent-hover disabled:opacity-40"
           >
             Create network
           </button>
@@ -301,7 +320,7 @@ function Segmented({
   value, options, onChange,
 }: { value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) {
   return (
-    <div className="flex rounded-[10px] bg-black/[0.05] p-0.5" role="radiogroup">
+    <div className="flex rounded-[10px] bg-fill/[0.05] p-0.5" role="radiogroup">
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -311,7 +330,7 @@ function Segmented({
             aria-checked={on}
             onClick={() => onChange(o.value)}
             className={`h-8 flex-1 rounded-[8px] px-2 text-[12px] font-semibold transition-all ${
-              on ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-ink-2 hover:text-ink"
+              on ? "bg-surface text-ink shadow-[0_1px_3px_rgb(var(--shade)/0.12)]" : "text-ink-2 hover:text-ink"
             }`}
           >
             {o.label}
@@ -330,7 +349,7 @@ function StepButton({
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="flex h-8 w-8 items-center justify-center rounded-[8px] text-[16px] text-ink-2 hover:bg-white disabled:opacity-30"
+      className="flex h-8 w-8 items-center justify-center rounded-[8px] text-[16px] text-ink-2 hover:bg-surface disabled:opacity-30"
     >
       {children}
     </button>

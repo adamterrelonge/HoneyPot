@@ -50,6 +50,9 @@ interface AppState {
 
   savesOpen: boolean;
   setSavesOpen: (open: boolean) => void;
+  /** Table view: a text equivalent of the map (Phase 8). */
+  tableOpen: boolean;
+  setTableOpen: (open: boolean) => void;
 
   /** Validate and load a topology into the map and the simulation worker. */
   loadBusiness: (input: unknown) => void;
@@ -102,6 +105,8 @@ export const useApp = create<AppState>()((set, get) => ({
 
   savesOpen: false,
   setSavesOpen: (savesOpen) => set({ savesOpen }),
+  tableOpen: false,
+  setTableOpen: (tableOpen) => set({ tableOpen }),
 
   loadBusiness: (input) => {
     get().showTopology(parseTopology(input));

@@ -215,6 +215,8 @@ export class Simulation {
     this.burst = new Float64Array(n).fill(1);
     this.demands.forEach((d, i) => (this.demandSeed[i] = deriveSeed(this.seed, d.id)));
 
+    // Start in sync with the incident engine, so tick 1 doesn't needlessly rebuild every path.
+    this.effectKey = this.incidents.effectKey();
     this.evaluate(true);
   }
 

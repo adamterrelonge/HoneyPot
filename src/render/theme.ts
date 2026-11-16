@@ -35,6 +35,66 @@ export const ZONE_STYLE: Record<ZoneKind, { top: number; side: number; edge: num
   secure: { top: 0xfff8e6, side: 0xf6e9c4, edge: 0xe8d18e },
 };
 
+// ── Light and dark palettes for the canvas (Phase 8) ─────────────────────────
+
+export interface Palette {
+  ink: number;
+  ink3: number;
+  hairline: number;
+  /** Strength of the floor grid lines. */
+  gridAlpha: number;
+  link: number;
+  accent: number;
+  shadow: number;
+  /** Multiplier for ground shadows (stronger on dark floors). */
+  shadowAlpha: number;
+  /** Label pills and dot outlines. */
+  surface: number;
+  /** Count badge behind group numbers. */
+  badge: number;
+  status: Record<NodeStatus, number>;
+  categories: Record<AppCategory, number>;
+  zones: Record<ZoneKind, { top: number; side: number; edge: number }>;
+}
+
+/** Each zone's hue, used to tint dark floor plates. */
+const ZONE_HUE: Record<ZoneKind, number> = {
+  internet: 0x0a84ff, edge: 0xff9f0a, server: 0xbf5af2, office: 0x30d158, branch: 0xffd60a,
+  cloud: 0x64d2ff, guest: 0x8e8e93, factory: 0x98a2b3, clinical: 0xff6482, secure: 0xffcc00,
+};
+
+/** Linear mix of two 0xRRGGBB colours. */
+export function mix(a: number, b: number, t: number): number {
+  const ch = (c: number, s: number) => (c >> s) & 0xff;
+  const m = (s: number) => Math.round(ch(a, s) * (1 - t) + ch(b, s) * t) << s;
+  return m(16) | m(8) | m(0);
+}
+
+const DARK_BASE = 0x1c1c1e;
+const DARK_ZONES = Object.fromEntries(
+  Object.entries(ZONE_HUE).map(([k, hue]) => [
+    k,
+    { top: mix(DARK_BASE, hue, 0.13), side: mix(0x111113, hue, 0.08), edge: mix(DARK_BASE, hue, 0.45) },
+  ]),
+) as Palette["zones"];
+
+export const PALETTES: Record<"light" | "dark", Palette> = {
+  light: {
+    ink: COLORS.ink, ink3: 0x68686d, hairline: COLORS.hairline, gridAlpha: 0.045, link: COLORS.link, accent: COLORS.accent,
+    shadow: COLORS.shadow, shadowAlpha: 1, surface: 0xffffff, badge: COLORS.ink,
+    status: STATUS_COLORS,
+    categories: { work: 0x0071e3, external: 0x5856d6, voice: 0x34c759, system: 0x30b0c7, threat: 0xff3b30 },
+    zones: ZONE_STYLE,
+  },
+  dark: {
+    ink: 0xf5f5f7, ink3: 0xa1a1a6, hairline: 0xffffff, gridAlpha: 0.06, link: 0x8e8e93, accent: 0x4da3ff,
+    shadow: 0x000000, shadowAlpha: 1.6, surface: 0x2c2c2e, badge: 0x48484a,
+    status: { online: 0x30d158, degraded: 0xff9f0a, offline: 0xff453a, compromised: 0xbf5af2 },
+    categories: { work: 0x0a84ff, external: 0x7d7aff, voice: 0x30d158, system: 0x64d2ff, threat: 0xff453a },
+    zones: DARK_ZONES,
+  },
+};
+
 export const MEDIUM_STYLE: Record<LinkMedium, { width: number; dashed: boolean }> = {
   fiber: { width: 1.75, dashed: false },
   copper: { width: 1.25, dashed: false },

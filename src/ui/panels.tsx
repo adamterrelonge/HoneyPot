@@ -12,11 +12,11 @@ import { useApp } from "../state/store";
 import { FirmwareSection } from "./lifecycle-panels";
 import { FLOW_STATUS, UtilBar, formatRate } from "./sim-panels";
 
-const STATUS_TEXT: Record<NodeStatus, { label: string; cls: string }> = {
-  online: { label: "Online", cls: "bg-ok/12 text-[#248a3d]" },
-  degraded: { label: "Degraded", cls: "bg-warn/15 text-[#c93400]" },
-  offline: { label: "Offline", cls: "bg-bad/12 text-[#d70015]" },
-  compromised: { label: "Compromised", cls: "bg-pwned/12 text-[#8944ab]" },
+export const STATUS_TEXT: Record<NodeStatus, { label: string; cls: string }> = {
+  online: { label: "Online", cls: "bg-ok/12 text-ok-ink" },
+  degraded: { label: "Degraded", cls: "bg-warn/15 text-warn-ink" },
+  offline: { label: "Offline", cls: "bg-bad/12 text-bad-ink" },
+  compromised: { label: "Compromised", cls: "bg-pwned/12 text-pwned-ink" },
 };
 
 /** Devices outside the business can't be powered off or isolated (mirrors the engine rule). */
@@ -57,6 +57,8 @@ export function Sidebar({ width }: { width: number }) {
 
   return (
     <aside
+      data-tour="devices"
+      aria-label="Devices"
       className="glass absolute top-[72px] bottom-3 left-3 flex flex-col overflow-hidden rounded-[20px]"
       style={{ width }}
       onMouseLeave={() => hover(null)}
@@ -72,7 +74,10 @@ export function Sidebar({ width }: { width: number }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search devices or IPs"
-          className="mt-3 h-8 w-full rounded-[9px] bg-black/[0.045] px-3 text-[13px] outline-none placeholder:text-ink-3 focus:bg-white focus:ring-[3px] focus:ring-accent/25"
+          id="device-search"
+          aria-label="Search devices or IPs"
+          type="search"
+          className="mt-3 h-8 w-full rounded-[9px] bg-fill/[0.045] px-3 text-[13px] outline-none placeholder:text-ink-3 focus:bg-surface focus:ring-[3px] focus:ring-accent/25"
         />
       </div>
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
@@ -87,7 +92,7 @@ export function Sidebar({ width }: { width: number }) {
                 onClick={() => select(n.id, { focus: true })}
                 onMouseEnter={() => hover(n.id)}
                 className={`flex w-full items-center gap-2.5 rounded-[9px] px-2 py-1.5 text-left transition-colors ${
-                  selectedId === n.id ? "bg-accent text-white" : "hover:bg-black/[0.04]"
+                  selectedId === n.id ? "bg-accent text-white" : "hover:bg-fill/[0.04]"
                 }`}
               >
                 <img src={emojiUrl(n.kind)} alt="" className="h-6 w-6 shrink-0" />
@@ -100,7 +105,7 @@ export function Sidebar({ width }: { width: number }) {
                 {n.count > 1 && (
                   <span
                     className={`rounded-full px-1.5 text-[10px] font-semibold tabular-nums ${
-                      selectedId === n.id ? "bg-white/25 text-white" : "bg-black/[0.06] text-ink-2"
+                      selectedId === n.id ? "bg-surface/25 text-white" : "bg-fill/[0.06] text-ink-2"
                     }`}
                   >
                     {n.count.toLocaleString()}
@@ -155,6 +160,9 @@ export function Inspector({ width }: { width: number }) {
   return (
     <aside
       aria-hidden={!open}
+      inert={!open}
+      data-tour="inspector"
+      aria-label="Device details"
       className={`glass absolute top-[72px] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
@@ -166,11 +174,11 @@ export function Inspector({ width }: { width: number }) {
             <button
               onClick={() => select(null)}
               aria-label="Close inspector"
-              className="absolute top-3 right-3 flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+              className="absolute top-3 right-3 flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
             >
               ✕
             </button>
-            <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-gradient-to-b from-white to-[#f0f0f3] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08),0_6px_20px_rgba(0,0,0,0.06)]">
+            <div className="flex h-20 w-20 items-center justify-center rounded-[22px] bg-gradient-to-b from-surface to-surface-2 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08),0_6px_20px_rgb(var(--shade)/0.06)]">
               <img
                 src={emojiUrl(node.kind)}
                 alt=""
@@ -184,7 +192,7 @@ export function Inspector({ width }: { width: number }) {
             <div className="mt-2 flex gap-1.5">
               <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${STATUS_TEXT[status].cls}`}>{pill}</span>
               {node.count > 1 && (
-                <span className="rounded-full bg-black/[0.05] px-2.5 py-0.5 text-[11px] font-semibold text-ink-2">
+                <span className="rounded-full bg-fill/[0.05] px-2.5 py-0.5 text-[11px] font-semibold text-ink-2">
                   Group of {node.count.toLocaleString()}
                 </span>
               )}
@@ -194,7 +202,7 @@ export function Inspector({ width }: { width: number }) {
           <div className="flex-1 overflow-y-auto px-4 pb-4">
             {live && live.reasons.length > 0 && (
               <div className="mb-3 rounded-[12px] bg-warn/10 px-3 py-2 shadow-[inset_0_0_0_0.5px_rgba(255,159,10,0.35)]">
-                <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#c93400]">Why</h3>
+                <h3 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-warn-ink">Why</h3>
                 <ul className="mt-1 space-y-0.5">
                   {live.reasons.map((r) => (
                     <li key={r} className="text-[12px] leading-snug text-ink">
@@ -235,12 +243,12 @@ export function Inspector({ width }: { width: number }) {
               <Section title="Services & tags">
                 <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
                   {node.services.map((s) => (
-                    <span key={s} className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                    <span key={s} className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent-ink">
                       {s}
                     </span>
                   ))}
                   {node.tags.map((t) => (
-                    <span key={t} className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                    <span key={t} className="rounded-full bg-fill/[0.05] px-2 py-0.5 text-[11px] font-medium text-ink-2">
                       {t}
                     </span>
                   ))}
@@ -257,7 +265,7 @@ export function Inspector({ width }: { width: number }) {
 function Actions({ node, live }: { node: NetNode; live: NodeSim | undefined }) {
   if (EXTERNAL_KINDS.has(node.kind)) {
     return (
-      <p className="mb-3 rounded-[12px] bg-black/[0.035] px-3 py-2 text-[12px] leading-snug text-ink-2">
+      <p className="mb-3 rounded-[12px] bg-fill/[0.035] px-3 py-2 text-[12px] leading-snug text-ink-2">
         {node.label} is outside the business. Disable its link below to simulate an outage.
       </p>
     );
@@ -265,17 +273,17 @@ function Actions({ node, live }: { node: NetNode; live: NodeSim | undefined }) {
   const powered = live?.powered ?? true;
   const isolated = live?.isolated ?? false;
   const btn =
-    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)]";
+    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)]";
   return (
     <div className="mb-3 flex gap-2">
       <button
-        className={`${btn} ${powered ? "bg-white/80 text-[#d70015] hover:bg-white" : "bg-accent text-white hover:bg-[#0077ed]"}`}
+        className={`${btn} ${powered ? "bg-surface/80 text-bad-ink hover:bg-surface" : "bg-accent text-white hover:bg-accent-hover"}`}
         onClick={() => void sim.dispatch({ type: "node.setPower", nodeId: node.id, on: !powered })}
       >
         {powered ? "Power off" : "Power on"}
       </button>
       <button
-        className={`${btn} ${isolated ? "bg-accent text-white hover:bg-[#0077ed]" : "bg-white/80 text-ink hover:bg-white"}`}
+        className={`${btn} ${isolated ? "bg-accent text-white hover:bg-accent-hover" : "bg-surface/80 text-ink hover:bg-surface"}`}
         disabled={!powered}
         onClick={() => void sim.dispatch({ type: "node.setIsolated", nodeId: node.id, isolated: !isolated })}
       >
@@ -292,38 +300,38 @@ function AccessActions({ node }: { node: NetNode }) {
   const startTrace = useApp((s) => s.startTrace);
   const setPolicyOpen = useApp((s) => s.setPolicyOpen);
   const btn =
-    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)]";
+    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)]";
   return (
     <>
       <div className="mb-3 flex gap-2">
         {!EXTERNAL_KINDS.has(node.kind) && (
           <button
-            className={`${btn} ${blocked ? "bg-accent text-white hover:bg-[#0077ed]" : "bg-white/80 text-[#c93400] hover:bg-white"}`}
+            className={`${btn} ${blocked ? "bg-accent text-white hover:bg-accent-hover" : "bg-surface/80 text-warn-ink hover:bg-surface"}`}
             onClick={() => void sim.dispatch({ type: "node.setAccess", nodeId: node.id, blocked: !blocked })}
             title={blocked ? "Remove the deny rule for this device" : "Add a deny-everything firewall rule for this device"}
           >
             {blocked ? "Restore access" : "Disable access"}
           </button>
         )}
-        <button className={`${btn} bg-white/80 text-ink hover:bg-white`} onClick={() => startTrace(node.id)}>
+        <button className={`${btn} bg-surface/80 text-ink hover:bg-surface`} onClick={() => startTrace(node.id)}>
           Trace from here
         </button>
       </div>
       {node.kind === "firewall" && (
         <button
-          className={`${btn} mb-3 w-full bg-white/80 text-ink hover:bg-white`}
+          className={`${btn} mb-3 w-full bg-surface/80 text-ink hover:bg-surface`}
           onClick={() => setPolicyOpen("rules")}
         >
           Edit firewall rules
         </button>
       )}
       {role && (
-        <label className="mb-3 flex items-center justify-between gap-3 rounded-[12px] bg-white/70 px-3 py-2 text-[13px] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+        <label className="mb-3 flex items-center justify-between gap-3 rounded-[12px] bg-surface/70 px-3 py-2 text-[13px] shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
           <span className="text-ink-2">Role{node.count > 1 ? ` (all ${node.count.toLocaleString()})` : ""}</span>
           <select
             value={role}
             onChange={(e) => void sim.dispatch({ type: "node.setRole", nodeId: node.id, role: e.target.value as Role })}
-            className="h-7 rounded-[7px] bg-black/[0.05] px-1.5 text-[12px] outline-none"
+            className="h-7 rounded-[7px] bg-fill/[0.05] px-1.5 text-[12px] outline-none"
           >
             {ROLES.map((r) => (
               <option key={r} value={r}>
@@ -412,10 +420,10 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (on: boolean) 
       aria-label={label}
       title={label}
       onClick={() => onChange(!on)}
-      className={`relative h-[18px] w-[30px] shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-ok" : "bg-black/15"}`}
+      className={`relative h-[18px] w-[30px] shrink-0 rounded-full transition-colors duration-200 ${on ? "bg-ok" : "bg-fill/15"}`}
     >
       <span
-        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-[left] duration-200 ${
+        className={`absolute top-[2px] h-[14px] w-[14px] rounded-full bg-surface shadow-[0_1px_2px_rgb(var(--shade)/0.25)] transition-[left] duration-200 ${
           on ? "left-[14px]" : "left-[2px]"
         }`}
       />
@@ -427,7 +435,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mb-3">
       <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{title}</h3>
-      <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
         {children}
       </div>
     </section>

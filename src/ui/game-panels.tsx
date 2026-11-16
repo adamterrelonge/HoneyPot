@@ -10,20 +10,21 @@ import { formatClock } from "../engine/sim/clock";
 import { emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { useDialogFocus } from "./a11y";
 import { Switch } from "./policy-panels";
 
 const money = (n: number) => `£${Math.round(n).toLocaleString()}`;
 const when = (m?: number) => (m === undefined ? "—" : `${formatClock(m).day} ${formatClock(m).time}`);
 const STATUS: Record<IncidentView["status"], string> = {
-  undetected: "bg-black/[0.06] text-ink-2",
-  active: "bg-bad/12 text-[#a8000f]",
-  contained: "bg-warn/15 text-[#8a3b00]",
-  resolved: "bg-ok/12 text-[#1d6b31]",
-  blocked: "bg-ok/12 text-[#1d6b31]",
+  undetected: "bg-fill/[0.06] text-ink-2",
+  active: "bg-bad/12 text-bad-ink",
+  contained: "bg-warn/15 text-warn-ink",
+  resolved: "bg-ok/12 text-ok-ink",
+  blocked: "bg-ok/12 text-ok-ink",
 };
-const GRADE: Record<string, string> = { A: "text-[#1d6b31]", B: "text-[#1d6b31]", C: "text-[#8a3b00]", D: "text-[#a8000f]", F: "text-[#a8000f]" };
-export const card = "rounded-[14px] bg-white/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]";
-export const primary = "h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-[#0077ed] disabled:opacity-40";
+const GRADE: Record<string, string> = { A: "text-ok-ink", B: "text-ok-ink", C: "text-warn-ink", D: "text-bad-ink", F: "text-bad-ink" };
+export const card = "rounded-[14px] bg-surface/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]";
+export const primary = "h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40";
 
 export function H({ children }: { children: ReactNode }) {
   return <h2 className="pt-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{children}</h2>;
@@ -35,22 +36,24 @@ export function Modal({ title, icon, onClose, children }: { title: string; icon:
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  const ref = useDialogFocus<HTMLDivElement>(true);
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-white/30 p-6 backdrop-blur-[4px]"
+      ref={ref}
+      className="absolute inset-0 z-40 flex items-center justify-center bg-surface/30 p-6 backdrop-blur-[4px]"
       role="dialog"
       aria-modal="true"
       aria-label={title}
       onMouseDown={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-white/85">
+      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-3">
           <img src={icon} alt="" className="h-8 w-8" />
           <h1 className="flex-1 text-[20px] font-semibold tracking-tight">{title}</h1>
           <button
             onClick={onClose}
             aria-label={`Close ${title}`}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
           >
             ✕
           </button>
@@ -162,8 +165,8 @@ export function GameHud() {
   return (
     <button
       onClick={() => (g.finished ? setReport(true) : setIncidents(true))}
-      className={`flex h-7 shrink-0 items-center gap-2 rounded-[8px] px-2.5 text-[12px] font-medium hover:bg-black/[0.08] ${
-        active ? "bg-bad/10 text-[#a8000f]" : "bg-black/[0.05] text-ink-2"
+      className={`flex h-7 shrink-0 items-center gap-2 rounded-[8px] px-2.5 text-[12px] font-medium hover:bg-fill/[0.08] ${
+        active ? "bg-bad/10 text-bad-ink" : "bg-fill/[0.05] text-ink-2"
       }`}
       title="Incidents and score"
     >
@@ -203,7 +206,7 @@ export function IncidentsPanel({ width }: { width: number }) {
         <button
           onClick={() => setOpen(false)}
           aria-label="Close incidents"
-          className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+          className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
         >
           ✕
         </button>
@@ -233,7 +236,7 @@ export function IncidentsPanel({ width }: { width: number }) {
                   <button
                     key={id}
                     onClick={() => select(id, { focus: true })}
-                    className="rounded-full bg-pwned/10 px-2 py-0.5 text-[11px] text-[#8944ab] hover:bg-pwned/20"
+                    className="rounded-full bg-pwned/10 px-2 py-0.5 text-[11px] text-pwned-ink hover:bg-pwned/20"
                   >
                     {i.encrypted.includes(id) ? "🔒 " : ""}
                     {label(id)}
@@ -249,7 +252,7 @@ export function IncidentsPanel({ width }: { width: number }) {
                     disabled={a.done || a.pendingUntil !== undefined}
                     title={a.blurb}
                     onClick={() => void sim.dispatch({ type: "incident.act", incidentId: i.id, action: a.key, nodeId: a.nodeId })}
-                    className="flex w-full items-center justify-between gap-2 rounded-[8px] bg-white px-2.5 py-1.5 text-left text-[12px] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)] hover:bg-accent/5 disabled:opacity-50"
+                    className="flex w-full items-center justify-between gap-2 rounded-[8px] bg-surface px-2.5 py-1.5 text-left text-[12px] shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)] hover:bg-accent/5 disabled:opacity-50"
                   >
                     <span className="font-medium">{a.label}</span>
                     <span className="shrink-0 text-[11px] text-ink-3">

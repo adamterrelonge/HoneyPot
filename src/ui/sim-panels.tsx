@@ -11,10 +11,10 @@ import { useApp } from "../state/store";
 import { FailuresToggle } from "./lifecycle-panels";
 
 export const FLOW_STATUS: Record<FlowStatus, { label: string; dot: string; pill: string }> = {
-  ok: { label: "Healthy", dot: "bg-ok", pill: "bg-ok/12 text-[#248a3d]" },
-  degraded: { label: "Degraded", dot: "bg-warn", pill: "bg-warn/15 text-[#c93400]" },
-  down: { label: "Down", dot: "bg-bad", pill: "bg-bad/12 text-[#d70015]" },
-  idle: { label: "Idle", dot: "bg-black/15", pill: "bg-black/[0.05] text-ink-3" },
+  ok: { label: "Healthy", dot: "bg-ok", pill: "bg-ok/12 text-ok-ink" },
+  degraded: { label: "Degraded", dot: "bg-warn", pill: "bg-warn/15 text-warn-ink" },
+  down: { label: "Down", dot: "bg-bad", pill: "bg-bad/12 text-bad-ink" },
+  idle: { label: "Idle", dot: "bg-fill/15", pill: "bg-fill/[0.05] text-ink-3" },
 };
 
 const SEVERITY_DOT: Record<Severity, string> = { info: "bg-accent", ok: "bg-ok", warn: "bg-warn", bad: "bg-bad" };
@@ -36,7 +36,8 @@ export function SimControls() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName) || t.getAttribute("role") === "switch")) return;
       if (e.code === "Space") {
         e.preventDefault();
         sim.setRunning(!useSim.getState().running);
@@ -47,7 +48,7 @@ export function SimControls() {
   }, []);
 
   const iconBtn =
-    "flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px] text-ink-2 transition-colors hover:bg-black/[0.05] hover:text-ink";
+    "flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px] text-ink-2 transition-colors hover:bg-fill/[0.05] hover:text-ink";
   return (
     <div className="flex items-center gap-1.5">
       <div className="mr-1 flex items-baseline gap-1.5 tabular-nums" aria-live="off">
@@ -65,7 +66,7 @@ export function SimControls() {
       <button className={iconBtn} onClick={() => sim.step()} aria-label="Step one tick" title="Step 15 simulated seconds">
         ⏭
       </button>
-      <div className="flex rounded-[9px] bg-black/[0.05] p-0.5" role="radiogroup" aria-label="Simulation speed">
+      <div className="flex rounded-[9px] bg-fill/[0.05] p-0.5" role="radiogroup" aria-label="Simulation speed">
         {SPEEDS.map((s) => {
           const on = running && speed === s;
           return (
@@ -75,7 +76,7 @@ export function SimControls() {
               aria-checked={on}
               onClick={() => sim.setSpeed(s)}
               className={`h-6 rounded-[7px] px-2 text-[11px] font-semibold tabular-nums transition-all ${
-                on ? "bg-white text-ink shadow-[0_1px_3px_rgba(0,0,0,0.12)]" : "text-ink-2 hover:text-ink"
+                on ? "bg-surface text-ink shadow-[0_1px_3px_rgb(var(--shade)/0.12)]" : "text-ink-2 hover:text-ink"
               }`}
             >
               {s}×
@@ -109,6 +110,9 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
   return (
     <aside
       aria-hidden={!open}
+      inert={!open}
+      data-tour="services"
+      aria-label="Business services"
       className={`glass absolute top-[72px] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
@@ -116,12 +120,12 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
     >
       <div className="px-4 pt-4 pb-2">
         <h2 className="text-[15px] font-semibold">Business services</h2>
-        <p className={`text-[12px] ${problems ? "text-[#c93400]" : "text-ink-3"}`}>
+        <p className={`text-[12px] ${problems ? "text-warn-ink" : "text-ink-3"}`}>
           {problems ? `${problems} service${problems > 1 ? "s" : ""} need attention` : "Everything is running normally"}
         </p>
       </div>
       <div className="flex-1 overflow-y-auto px-3 pb-3">
-        <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+        <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
           {ordered.map((a) => {
             const info = APP_INFO[a.app];
             const st = FLOW_STATUS[a.status];
@@ -150,7 +154,7 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
             <h3 className="px-1 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
               Busiest links
             </h3>
-            <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+            <div className="divide-y divide-hairline overflow-hidden rounded-[12px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
               {busiest.map(({ l, s }) => (
                 <div key={l.id} className="px-3 py-2">
                   <div className="flex items-baseline justify-between gap-2 text-[12px]">
@@ -174,7 +178,7 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
 export function UtilBar({ util }: { util: number }) {
   const color = util >= 1 ? "bg-bad" : util >= 0.8 ? "bg-warn" : "bg-accent";
   return (
-    <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-black/[0.06]">
+    <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-fill/[0.06]">
       <div className={`h-full rounded-full ${color} transition-[width] duration-300`} style={{ width: `${Math.min(100, util * 100)}%` }} />
     </div>
   );
@@ -194,11 +198,11 @@ export function ActivityFeed({ left, right }: { left: number; right: number }) {
 
   return (
     <div className="pointer-events-none absolute bottom-3 flex justify-center" style={{ left, right }}>
-      <div className="glass pointer-events-auto w-full max-w-[560px] overflow-hidden rounded-[16px]">
+      <div role="region" aria-label="Activity" data-tour="activity" className="glass pointer-events-auto w-full max-w-[560px] overflow-hidden rounded-[16px]">
         <div className="flex items-center justify-between px-3.5 pt-2 pb-1">
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">Activity</h2>
           {list.length > 3 && (
-            <button onClick={() => setExpanded(!expanded)} className="text-[11px] font-medium text-accent hover:underline">
+            <button onClick={() => setExpanded(!expanded)} className="text-[11px] font-medium text-accent-ink hover:underline">
               {expanded ? "Show less" : `Show all (${list.length})`}
             </button>
           )}
@@ -217,7 +221,7 @@ export function ActivityFeed({ left, right }: { left: number; right: number }) {
                 <button
                   disabled={!clickable}
                   onClick={() => clickable && select(e.subject!, { focus: true })}
-                  className="flex w-full items-start gap-2 rounded-[8px] px-2 py-1 text-left enabled:hover:bg-black/[0.035]"
+                  className="flex w-full items-start gap-2 rounded-[8px] px-2 py-1 text-left enabled:hover:bg-fill/[0.035]"
                 >
                   <span className={`mt-[5px] h-[7px] w-[7px] shrink-0 rounded-full ${SEVERITY_DOT[e.severity]}`} />
                   <span className="w-[62px] shrink-0 text-[11px] leading-[18px] tabular-nums text-ink-3">
@@ -247,7 +251,7 @@ export function ErrorToast() {
   return (
     <div
       role="alert"
-      className="glass absolute top-[72px] left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-[#d70015]"
+      className="glass absolute top-[72px] left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-bad-ink"
     >
       {error}
     </div>

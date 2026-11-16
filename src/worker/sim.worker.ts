@@ -12,13 +12,15 @@ import { businessRef, createSave, parseSave, restoreSave, SaveError, type Busine
 import { MINUTES_PER_TICK, TICK_HZ, type Speed } from "../engine/sim/clock";
 import type { CommandResult } from "../engine/sim/commands";
 import { Simulation } from "../engine/sim/simulation";
-import type { Snapshot, TraceResult } from "../engine/sim/types";
+import type { TraceResult } from "../engine/sim/types";
+import { encodeSnapshot, newSent, type Sent, type WireSnapshot } from "./wire";
 
 const LOOP_MS = 25;
 const PUSH_MS = 100;
 const MAX_TICKS_PER_LOOP = 64;
 
-export type SnapshotListener = (snap: Snapshot) => void;
+/** Receives snapshots in wire form (paths sent only when they change; see wire.ts). */
+export type SnapshotListener = (snap: WireSnapshot) => void;
 /** Called with a save at the start of each new simulated day. */
 export type DayListener = (save: SaveFile) => void;
 
@@ -28,6 +30,8 @@ export class SimHost {
   private sim: Simulation | null = null;
   private ref: BusinessRef | null = null;
   private pending: { sim: Simulation; ref: BusinessRef } | null = null;
+  /** Flow paths the UI already holds (reset per session). */
+  private sent: Sent = newSent();
   private listener: SnapshotListener | null = null;
   private onDay: DayListener | null = null;
   private day = 0;
@@ -125,6 +129,7 @@ export class SimHost {
     this.sim = sim;
     this.ref = ref;
     this.listener = listener;
+    this.sent = newSent();
     this.onDay = onDay ?? null;
     this.day = dayOf(sim);
     this.last = performance.now();
@@ -163,7 +168,7 @@ export class SimHost {
     const now = performance.now();
     if (!this.sim || !this.listener || (!force && now - this.lastPush < PUSH_MS)) return;
     this.lastPush = now;
-    this.listener(this.sim.snapshot());
+    this.listener(encodeSnapshot(this.sim.snapshot(), this.sent));
   }
 }
 

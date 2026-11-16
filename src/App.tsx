@@ -9,6 +9,9 @@ import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
 import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { Wizard } from "./ui/wizard";
+import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
+import { Tour } from "./ui/tour";
+import { usePrefs } from "./state/prefs";
 
 const SIDEBAR_W = 280;
 const INSPECTOR_W = 340;
@@ -20,6 +23,8 @@ export function App() {
   const incidentsOpen = useApp((s) => s.incidentsOpen);
 
   const topologyKey = useApp((s) => s.topologyKey);
+  // The canvas is rebuilt with the other palette when the theme changes.
+  const theme = usePrefs((s) => s.resolved);
 
   useEffect(() => bootSimulation(), []);
 
@@ -34,7 +39,8 @@ export function App() {
 
   return (
     <div className="relative h-full w-full select-none">
-      <NetworkCanvas key={topologyKey} insets={insets} />
+      <SkipLinks />
+      <NetworkCanvas key={`${topologyKey}-${theme}`} insets={insets} />
       <TopBar />
       <Sidebar width={SIDEBAR_W} />
       <ServicesPanel width={INSPECTOR_W} open={!selectedId && !tracing && !incidentsOpen} />
@@ -43,6 +49,8 @@ export function App() {
       {!tracing && <IncidentsPanel width={INSPECTOR_W} />}
       <ZoomControls />
       <ActivityFeed left={SIDEBAR_W + 24} right={72} />
+      <TableView left={SIDEBAR_W + 24} right={INSPECTOR_W + 24} />
+      <LiveAnnouncer />
       <ErrorToast />
       <NoticeToast />
       <SavesSheet />
@@ -51,6 +59,7 @@ export function App() {
       <PlaySheet />
       <ReportSheet />
       <Wizard />
+      <Tour />
     </div>
   );
 }
@@ -63,6 +72,8 @@ function TopBar() {
   const setVulnsOpen = useApp((s) => s.setVulnsOpen);
   const setPlayOpen = useApp((s) => s.setPlayOpen);
   const setSavesOpen = useApp((s) => s.setSavesOpen);
+  const tableOpen = useApp((s) => s.tableOpen);
+  const setTableOpen = useApp((s) => s.setTableOpen);
   const exposed = useExposedCount();
   const profile = meta.profile;
   return (
@@ -78,7 +89,7 @@ function TopBar() {
       {profile && profile.compliance.length > 0 && (
         <span className="hidden gap-1 2xl:flex">
           {profile.compliance.map((c) => (
-            <span key={c} className="rounded-full bg-black/[0.04] px-2 py-0.5 text-[10px] font-semibold text-ink-2">
+            <span key={c} className="rounded-full bg-fill/[0.04] px-2 py-0.5 text-[10px] font-semibold text-ink-2">
               {COMPLIANCE_INFO[c].label}
             </span>
           ))}
@@ -86,48 +97,65 @@ function TopBar() {
       )}
       <button
         onClick={() => openWizard(true)}
-        className="ml-1 h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+        className="ml-1 h-7 shrink-0 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink"
       >
         New business…
       </button>
       <button
+        data-tour="saves"
         onClick={() => setSavesOpen(true)}
-        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+        className="h-7 shrink-0 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink"
       >
         Saves
       </button>
       <button
+        aria-pressed={tableOpen}
+        onClick={() => setTableOpen(!tableOpen)}
+        className={`h-7 shrink-0 rounded-[8px] px-2.5 text-[12px] font-medium ${tableOpen ? "bg-accent/12 text-accent-ink" : "bg-fill/[0.05] text-ink-2 hover:bg-fill/[0.08] hover:text-ink"}`}
+      >
+        Table
+      </button>
+      <button
+        data-tour="trace"
         onClick={() => startTrace()}
-        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+        className="h-7 shrink-0 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink"
       >
         Trace
       </button>
       <button
+        data-tour="policy"
         onClick={() => setPolicyOpen("rules")}
-        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+        className="h-7 shrink-0 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink"
       >
         Policy
       </button>
       <button
+        data-tour="vulns"
         onClick={() => setVulnsOpen(true)}
-        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink"
       >
-        Vulnerabilities
-        {exposed > 0 && <span className="rounded-full bg-bad px-1.5 text-[10px] font-bold text-white tabular-nums">{exposed}</span>}
+        Vulnerabilities{" "}
+        {exposed > 0 && (
+          <span className="rounded-full bg-bad px-1.5 text-[10px] font-bold text-white tabular-nums">
+            {exposed}
+            <span className="sr-only"> devices exposed</span>
+          </span>
+        )}
       </button>
       <button
+        data-tour="play"
         onClick={() => setPlayOpen(true)}
-        className="h-7 shrink-0 rounded-[8px] bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-[#0077ed]"
+        className="h-7 shrink-0 rounded-[8px] bg-accent px-2.5 text-[12px] font-semibold text-white hover:bg-accent-hover"
       >
         Play
       </button>
       <GameHud />
       <div className="ml-auto flex items-center gap-3">
-        <HistoryButtons />
-        <SimControls />
-        <span className="hidden whitespace-nowrap rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 min-[1800px]:inline">
-          Phase 7 · Saves
-        </span>
+        <div data-tour="clock" className="flex items-center gap-3">
+          <HistoryButtons />
+          <SimControls />
+        </div>
+        <ThemeToggle />
       </div>
     </header>
   );
@@ -137,7 +165,7 @@ function ZoomControls() {
   const zoom = useApp((s) => s.zoom);
   const camera = useApp((s) => s.camera);
   const btn =
-    "flex h-9 w-9 items-center justify-center text-[17px] text-ink-2 transition-colors hover:bg-black/[0.04] hover:text-ink active:bg-black/[0.07]";
+    "flex h-9 w-9 items-center justify-center text-[17px] text-ink-2 transition-colors hover:bg-fill/[0.04] hover:text-ink active:bg-fill/[0.07]";
   return (
     <div className="glass absolute bottom-3 right-3 flex flex-col overflow-hidden rounded-[14px]">
       <button className={btn} onClick={() => camera({ kind: "zoomIn" })} aria-label="Zoom in">+</button>

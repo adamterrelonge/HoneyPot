@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { usePrefs } from "../state/prefs";
 import { NetworkScene, type Insets } from "./scene";
+import { PALETTES } from "./theme";
 
 /**
  * Owns the single NetworkScene. Store → scene sync happens through `useApp.subscribe`
@@ -15,7 +17,9 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
     const host = hostRef.current;
     if (!host) return;
     const { select, hover, setZoom, topology } = useApp.getState();
-    const scene = new NetworkScene({ onSelect: (id) => select(id), onHover: hover, onZoom: setZoom });
+    const scene = new NetworkScene({ onSelect: (id) => select(id), onHover: hover, onZoom: setZoom }, PALETTES[usePrefs.getState().resolved]);
+    scene.setReducedMotion(usePrefs.getState().reducedMotion);
+    const unsubPrefs = usePrefs.subscribe((p) => scene.setReducedMotion(p.reducedMotion));
     sceneRef.current = scene;
     if (import.meta.env.DEV) (window as unknown as { __honeypotScene?: NetworkScene }).__honeypotScene = scene;
     scene.setInsets(insets);
@@ -53,6 +57,7 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
     return () => {
       unsub();
       unsubSim();
+      unsubPrefs();
       scene.destroy();
       sceneRef.current = null;
     };
@@ -64,5 +69,15 @@ export function NetworkCanvas({ insets }: { insets: Insets }) {
     sceneRef.current?.setInsets(insets);
   }, [insets]);
 
-  return <div ref={hostRef} className="absolute inset-0" aria-label="Network map" role="application" />;
+  // The map is a visual overview; everything on it is also reachable by keyboard and screen
+  // reader through the device list, the inspector and the table view (WCAG 1.1.1, 2.1.1).
+  const name = useApp((s) => s.topology.meta.name);
+  return (
+    <div
+      ref={hostRef}
+      className="absolute inset-0"
+      role="img"
+      aria-label={`Network map of ${name}. For keyboard and screen reader access use the device list or the table view.`}
+    />
+  );
 }

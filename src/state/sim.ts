@@ -11,6 +11,7 @@ import { describeSave, type SaveFile } from "../engine/save/save";
 import type { Speed } from "../engine/sim/clock";
 import type { CommandInput, CommandResult } from "../engine/sim/commands";
 import type { Snapshot, TraceResult } from "../engine/sim/types";
+import { decodeSnapshot, newHeld, type WireSnapshot } from "../worker/wire";
 import { autosave, newSaveId } from "../persist/db";
 import type { SimHost } from "../worker/sim.worker";
 
@@ -41,11 +42,13 @@ function ensureHost(): Remote<SimHost> {
   return host;
 }
 
-function listeners(): [(snap: Snapshot) => void, (save: SaveFile) => void] {
+function listeners(): [(snap: WireSnapshot) => void, (save: SaveFile) => void] {
+  const held = newHeld();
   const mine = ++epoch;
   useSim.setState({ snap: null, error: null });
   return [
-    proxy((snap: Snapshot) => {
+    proxy((wire: WireSnapshot) => {
+      const snap = decodeSnapshot(wire, held);
       if (mine === epoch) useSim.setState({ snap });
     }),
     proxy((save: SaveFile) => {

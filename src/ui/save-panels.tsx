@@ -11,17 +11,21 @@ import { useApp } from "../state/store";
 import { H, Modal, card, primary } from "./game-panels";
 
 const quiet =
-  "h-7 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink disabled:opacity-40";
+  "h-7 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink disabled:opacity-40";
 
 // ── Undo / redo ──────────────────────────────────────────────────────────────
 
 export function HistoryButtons() {
-  const h = useSim((s) => s.snap?.history);
+  // Select primitives, not the history object (a new one arrives with every snapshot).
+  const undo = useSim((s) => s.snap?.history.undo ?? null);
+  const redo = useSim((s) => s.snap?.history.redo ?? null);
+  const locked = useSim((s) => s.snap?.history.locked ?? false);
+  const h = { undo, redo, locked };
   useHistoryKeys();
   const tip = (verb: string, label: string | null | undefined) =>
     h?.locked ? `Games are final: ${verb.toLowerCase()} is off until the game ends` : label ? `${verb}: ${label}` : `Nothing to ${verb.toLowerCase()}`;
   const btn =
-    "flex h-7 w-7 items-center justify-center rounded-[8px] text-[15px] text-ink-2 hover:bg-black/[0.06] hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent";
+    "flex h-7 w-7 items-center justify-center rounded-[8px] text-[15px] text-ink-2 hover:bg-fill/[0.06] hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent";
   return (
     <div className="flex items-center">
       <button className={btn} disabled={!h?.undo || h.locked} title={tip("Undo", h?.undo)} aria-label={tip("Undo", h?.undo)} onClick={() => void sim.undo()}>
@@ -206,7 +210,7 @@ export function SavesSheet() {
 
   return (
     <Modal title="Saves" icon="/emoji/database.png" onClose={close}>
-      {problem && <p className="mb-2 rounded-[10px] bg-bad/10 px-3 py-2 text-[12px] text-[#a8000f]">{problem}</p>}
+      {problem && <p className="mb-2 rounded-[10px] bg-bad/10 px-3 py-2 text-[12px] text-bad-ink">{problem}</p>}
 
       <H>This session</H>
       <div className={`${card} flex flex-wrap items-center gap-2`}>
@@ -217,7 +221,7 @@ export function SavesSheet() {
           aria-label="Save name"
           placeholder={`Name (optional, defaults to ${meta.name} and the current time)`}
           maxLength={80}
-          className="h-8 min-w-[220px] flex-1 rounded-[8px] bg-white px-2.5 text-[13px] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
+          className="h-8 min-w-[220px] flex-1 rounded-[8px] bg-surface px-2.5 text-[13px] shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.15)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
         />
         <button className={primary} disabled={busy} onClick={() => void saveNow()}>
           Save
@@ -245,7 +249,7 @@ export function SavesSheet() {
             value={code}
             onFocus={(e) => e.currentTarget.select()}
             aria-label="Share code"
-            className="h-16 w-full resize-none rounded-[10px] bg-white/80 p-2 font-mono text-[10px] leading-snug text-ink-2 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.12)] outline-none"
+            className="h-16 w-full resize-none rounded-[10px] bg-surface/80 p-2 font-mono text-[10px] leading-snug text-ink-2 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.12)] outline-none"
           />
         </div>
       )}
@@ -257,7 +261,7 @@ export function SavesSheet() {
           onChange={(e) => setPaste(e.target.value)}
           placeholder="Paste a code starting HONEYPOT1-"
           aria-label="Paste a share code"
-          className="h-14 flex-1 resize-none rounded-[8px] bg-white p-2 font-mono text-[11px] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.15)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
+          className="h-14 flex-1 resize-none rounded-[8px] bg-surface p-2 font-mono text-[11px] shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.15)] outline-none focus:shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
         />
         <button
           className={primary}

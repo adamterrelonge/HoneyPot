@@ -9,13 +9,14 @@ import { formatClock } from "../engine/sim/clock";
 import { emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { useDialogFocus } from "./a11y";
 import { Switch } from "./policy-panels";
 
 export const SEVERITY_STYLE: Record<Severity, string> = {
-  critical: "bg-bad/12 text-[#a8000f]",
-  high: "bg-warn/15 text-[#a14500]",
-  medium: "bg-[#ffcc00]/20 text-[#7a5d00]",
-  low: "bg-black/[0.05] text-ink-2",
+  critical: "bg-bad/12 text-bad-ink",
+  high: "bg-warn/15 text-warn-ink",
+  medium: "bg-caution/20 text-caution-ink",
+  low: "bg-fill/[0.05] text-ink-2",
 };
 
 const when = (minute: number) => {
@@ -36,14 +37,14 @@ export function FirmwareSection({ node }: { node: NetNode }) {
   const busy = d.condition === "updating" || d.condition === "bricked" || d.condition === "failed";
   const isOs = product?.vendor === "Microsoft" || product?.id === "portal-app";
   const btn =
-    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.1)]";
+    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)]";
 
   return (
     <section className="mb-3">
       <h3 className="px-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">
         {isOs ? "Software & patches" : "Firmware"}
       </h3>
-      <div className="overflow-hidden rounded-[12px] bg-white/70 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <div className="overflow-hidden rounded-[12px] bg-surface/70 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
         <Condition d={d} />
         <div className="divide-y divide-hairline">
           {product && (
@@ -82,7 +83,7 @@ export function FirmwareSection({ node }: { node: NetNode }) {
                 <span>
                   Scheduled: <b className="font-semibold">{d.scheduled.version}</b> at {when(d.scheduled.atMinute)}
                 </span>
-                <button onClick={() => void sim.dispatch({ type: "firmware.cancel", nodeId: node.id })} className="text-[12px] font-medium text-accent">
+                <button onClick={() => void sim.dispatch({ type: "firmware.cancel", nodeId: node.id })} className="text-[12px] font-medium text-accent-ink">
                   Cancel
                 </button>
               </div>
@@ -93,7 +94,7 @@ export function FirmwareSection({ node }: { node: NetNode }) {
                   value={chosen}
                   onChange={(e) => setTarget(e.target.value)}
                   disabled={busy}
-                  className="h-8 w-full rounded-[8px] bg-black/[0.05] px-2 text-[12px] outline-none"
+                  className="h-8 w-full rounded-[8px] bg-fill/[0.05] px-2 text-[12px] outline-none"
                 >
                   {[...product.releases].reverse().map((r) => (
                     <option key={r.version} value={r.version}>
@@ -104,7 +105,7 @@ export function FirmwareSection({ node }: { node: NetNode }) {
                 </select>
                 <div className="flex gap-2">
                   <button
-                    className={`${btn} bg-white/80 text-[#c93400] hover:bg-white`}
+                    className={`${btn} bg-surface/80 text-warn-ink hover:bg-surface`}
                     disabled={busy || chosen === d.version}
                     title="Install immediately: the device reboots now (5–20 minutes)"
                     onClick={() => void sim.dispatch({ type: "firmware.install", nodeId: node.id, version: chosen, when: "now" })}
@@ -112,7 +113,7 @@ export function FirmwareSection({ node }: { node: NetNode }) {
                     Install now
                   </button>
                   <button
-                    className={`${btn} bg-accent text-white hover:bg-[#0077ed]`}
+                    className={`${btn} bg-accent text-white hover:bg-accent-hover`}
                     disabled={busy || chosen === d.version}
                     title="Install in tonight's 22:00 maintenance window"
                     onClick={() => void sim.dispatch({ type: "firmware.install", nodeId: node.id, version: chosen, when: "tonight" })}
@@ -124,7 +125,7 @@ export function FirmwareSection({ node }: { node: NetNode }) {
             )}
             {d.previous && d.condition !== "bricked" && (
               <button
-                className={`${btn} w-full bg-white/80 text-ink hover:bg-white`}
+                className={`${btn} w-full bg-surface/80 text-ink hover:bg-surface`}
                 disabled={d.condition === "updating"}
                 onClick={() => void sim.dispatch({ type: "firmware.rollback", nodeId: node.id })}
               >
@@ -143,28 +144,28 @@ function Condition({ d }: { d: NonNullable<ReturnType<typeof useSim.getState>["s
   const box = "px-3 py-2 text-[12px] leading-snug";
   if (d.condition === "updating" && d.job) {
     return (
-      <div className={`${box} bg-accent/10 text-[#00468c]`}>
+      <div className={`${box} bg-accent/10 text-accent-ink`}>
         <b className="font-semibold">{d.job.rollback ? "Rolling back" : "Installing"} {d.job.to}</b> · offline until about {when(d.job.endsMinute)}
       </div>
     );
   }
   if (d.condition === "config-broken") {
     return (
-      <div className={`${box} bg-warn/15 text-[#8a3b00]`}>
+      <div className={`${box} bg-warn/15 text-warn-ink`}>
         <b className="font-semibold">Settings didn't migrate.</b> Traffic through this device is degraded. Roll back to {d.previous}.
       </div>
     );
   }
   if (d.condition === "bricked") {
     return (
-      <div className={`${box} bg-bad/10 text-[#a8000f]`}>
+      <div className={`${box} bg-bad/10 text-bad-ink`}>
         <b className="font-semibold">Bricked by the update.</b> Replacement due {d.untilMinute !== undefined ? when(d.untilMinute) : "soon"}.
       </div>
     );
   }
   if (d.condition === "failed") {
     return (
-      <div className={`${box} bg-bad/10 text-[#a8000f]`}>
+      <div className={`${box} bg-bad/10 text-bad-ink`}>
         <b className="font-semibold">Hardware fault: {d.fault}.</b> Replacement due {d.untilMinute !== undefined ? when(d.untilMinute) : "soon"}.
       </div>
     );
@@ -181,7 +182,7 @@ function AdvisoryLine({ a }: { a: Advisory }) {
           href={`https://nvd.nist.gov/vuln/detail/${a.cve}`}
           target="_blank"
           rel="noreferrer"
-          className="font-mono text-[11px] font-semibold text-accent hover:underline"
+          className="font-mono text-[11px] font-semibold text-accent-ink hover:underline"
         >
           {a.cve}
         </a>
@@ -247,6 +248,7 @@ export function VulnerabilitiesSheet() {
     );
   }, [devices, topology]);
 
+  const dialogRef = useDialogFocus<HTMLDivElement>(open);
   if (!open) return null;
   const exposedDevices = new Set(rows.flatMap((r) => r.nodes.map((n) => n.node.id)));
   const exposedUnits = [...exposedDevices].reduce((s, id) => s + (topology.nodes.find((n) => n.id === id)?.count ?? 1), 0);
@@ -259,13 +261,14 @@ export function VulnerabilitiesSheet() {
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-white/30 p-6 backdrop-blur-[4px]"
+      className="absolute inset-0 z-40 flex items-center justify-center bg-surface/30 p-6 backdrop-blur-[4px]"
       role="dialog"
       aria-modal="true"
       aria-labelledby="vulns-title"
+      ref={dialogRef}
       onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}
     >
-      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-white/85">
+      <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-2">
           <img src="/emoji/warning.png" alt="" className="h-8 w-8" />
           <div className="flex-1">
@@ -283,7 +286,7 @@ export function VulnerabilitiesSheet() {
           <button
             onClick={() => setOpen(false)}
             aria-label="Close vulnerabilities"
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.05] text-[13px] text-ink-2 hover:bg-black/[0.09]"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
           >
             ✕
           </button>
@@ -294,7 +297,7 @@ export function VulnerabilitiesSheet() {
         </p>
         <div className="flex-1 space-y-3 overflow-y-auto px-6 pb-6">
           {rows.map((row) => (
-            <article key={row.a.cve} className="rounded-[14px] bg-white/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]">
+            <article key={row.a.cve} className="rounded-[14px] bg-surface/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.08)]">
               <div className="flex flex-wrap items-start gap-3">
                 <div className="min-w-0 flex-1">
                   <AdvisoryLine a={row.a} />
@@ -303,13 +306,13 @@ export function VulnerabilitiesSheet() {
                   onClick={() => scheduleAll(row)}
                   disabled={row.nodes.every((n) => n.managed || n.scheduled)}
                   hidden={row.nodes.every((n) => n.managed)}
-                  className="h-8 shrink-0 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-[#0077ed] disabled:opacity-40"
+                  className="h-8 shrink-0 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-accent-hover disabled:opacity-40"
                   title="Install the latest version on every affected device in tonight's 22:00 window"
                 >
                   {row.nodes.every((n) => n.managed || n.scheduled) ? "All scheduled" : "Patch all tonight"}
                 </button>
                 {row.nodes.every((n) => n.managed) && (
-                  <span className="shrink-0 rounded-[8px] bg-black/[0.05] px-3 py-1.5 text-[12px] text-ink-2">Your provider must patch this</span>
+                  <span className="shrink-0 rounded-[8px] bg-fill/[0.05] px-3 py-1.5 text-[12px] text-ink-2">Your provider must patch this</span>
                 )}
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
@@ -320,14 +323,14 @@ export function VulnerabilitiesSheet() {
                       setOpen(false);
                       select(node.id, { focus: true });
                     }}
-                    className="flex items-center gap-1.5 rounded-full bg-black/[0.05] py-0.5 pr-2 pl-1 text-[11px] text-ink-2 hover:bg-black/[0.08]"
+                    className="flex items-center gap-1.5 rounded-full bg-fill/[0.05] py-0.5 pr-2 pl-1 text-[11px] text-ink-2 hover:bg-fill/[0.08]"
                     title={managed ? "Managed by your internet provider" : scheduled ? "Update scheduled for tonight" : `Running ${version}`}
                   >
                     <img src={emojiUrl(node.kind)} alt="" className="h-4 w-4" />
                     {node.label}
                     {node.count > 1 && <span className="text-ink-3">×{node.count}</span>}
                     <span className="text-ink-3">· {version}</span>
-                    {scheduled && <span className="text-accent">⏱</span>}
+                    {scheduled && <span className="text-accent-ink">⏱</span>}
                     {managed && <span className="text-ink-3">(ISP)</span>}
                   </button>
                 ))}
