@@ -48,8 +48,15 @@ interface AppState {
   setVulnsOpen: (open: boolean) => void;
   setRiskLens: (on: boolean) => void;
 
+  savesOpen: boolean;
+  setSavesOpen: (open: boolean) => void;
+
   /** Validate and load a topology into the map and the simulation worker. */
   loadBusiness: (input: unknown) => void;
+  /** Load a save file (verified in the worker first); resolves to an error message or null. */
+  loadSave: (save: unknown) => Promise<string | null>;
+  /** Swap the map to a new layout and reset UI state (no simulation change). */
+  showTopology: (topology: Topology) => void;
   setWizardOpen: (open: boolean) => void;
   startTrace: (source?: string | null) => void;
   updateTrace: (patch: Partial<NonNullable<AppState["trace"]>>) => void;
@@ -93,14 +100,23 @@ export const useApp = create<AppState>()((set, get) => ({
   setVulnsOpen: (vulnsOpen) => set({ vulnsOpen }),
   setRiskLens: (riskLens) => set({ riskLens }),
 
+  savesOpen: false,
+  setSavesOpen: (savesOpen) => set({ savesOpen }),
+
   loadBusiness: (input) => {
-    const topology = parseTopology(input);
-    set({
-      topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
-      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false, playOpen: false, incidentsOpen: false, reportOpen: false,
-    });
+    get().showTopology(parseTopology(input));
     sim.load(input);
   },
+  loadSave: async (save) => {
+    const res = await sim.loadSave(save, (topology) => get().showTopology(topology));
+    return res.ok ? null : res.error;
+  },
+  showTopology: (topology) =>
+    set({
+      topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
+      selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false, playOpen: false,
+      incidentsOpen: false, reportOpen: false, savesOpen: false,
+    }),
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),
   startTrace: (source = null) => set({ trace: { source, target: null, service: null, result: null }, selectedId: null }),
   updateTrace: (patch) => {

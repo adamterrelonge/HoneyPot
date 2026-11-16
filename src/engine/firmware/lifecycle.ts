@@ -73,6 +73,14 @@ interface DeviceState {
   scheduled?: { version: string; atTick: number };
 }
 
+/** A device's changing state without its product (which the topology determines). */
+export type DeviceStateData = Omit<DeviceState, "product">;
+
+export interface LifecycleState {
+  failuresEnabled: boolean;
+  devices: Record<string, DeviceStateData>;
+}
+
 export interface LifecycleEvent {
   severity: "info" | "ok" | "warn" | "bad";
   text: string;
@@ -389,6 +397,33 @@ export class Lifecycle {
       };
     }
     return out;
+  }
+
+  /** Version scheduled for tonight's window, if any (used to undo a cancel). */
+  scheduledVersion(id: string): string | undefined {
+    return this.states.get(id)?.scheduled?.version;
+  }
+
+  // ── Saves (Phase 7) ───────────────────────────────────────────────────────
+
+  /** Plain-data copy of everything that changes over time (products come from the topology). */
+  exportState(): LifecycleState {
+    const devices: Record<string, DeviceStateData> = {};
+    for (const [id, st] of this.states) {
+      const { product: _product, ...rest } = st;
+      devices[id] = JSON.parse(JSON.stringify(rest)) as DeviceStateData;
+    }
+    return { failuresEnabled: this.failuresEnabled, devices };
+  }
+
+  /** Restore what `exportState` produced. Only devices of this topology are read. */
+  importState(s: LifecycleState): void {
+    this.failuresEnabled = s.failuresEnabled;
+    for (const [id, st] of this.states) {
+      const saved = s.devices[id];
+      if (!saved) throw new Error(`Save has no lifecycle state for "${id}"`);
+      this.states.set(id, { product: st.product, ...(JSON.parse(JSON.stringify(saved)) as DeviceStateData) });
+    }
   }
 
   hashPart(): string {

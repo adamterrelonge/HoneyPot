@@ -7,6 +7,7 @@ import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-p
 import { GameHud, IncidentsPanel, PlaySheet, ReportSheet } from "./ui/game-panels";
 import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
+import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { Wizard } from "./ui/wizard";
 
 const SIDEBAR_W = 280;
@@ -43,6 +44,8 @@ export function App() {
       <ZoomControls />
       <ActivityFeed left={SIDEBAR_W + 24} right={72} />
       <ErrorToast />
+      <NoticeToast />
+      <SavesSheet />
       <PolicySheet />
       <VulnerabilitiesSheet />
       <PlaySheet />
@@ -59,6 +62,7 @@ function TopBar() {
   const setPolicyOpen = useApp((s) => s.setPolicyOpen);
   const setVulnsOpen = useApp((s) => s.setVulnsOpen);
   const setPlayOpen = useApp((s) => s.setPlayOpen);
+  const setSavesOpen = useApp((s) => s.setSavesOpen);
   const exposed = useExposedCount();
   const profile = meta.profile;
   return (
@@ -87,6 +91,12 @@ function TopBar() {
         New business…
       </button>
       <button
+        onClick={() => setSavesOpen(true)}
+        className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
+      >
+        Saves
+      </button>
+      <button
         onClick={() => startTrace()}
         className="h-7 shrink-0 rounded-[8px] bg-black/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-black/[0.08] hover:text-ink"
       >
@@ -113,9 +123,10 @@ function TopBar() {
       </button>
       <GameHud />
       <div className="ml-auto flex items-center gap-3">
+        <HistoryButtons />
         <SimControls />
-        <span className="hidden rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 xl:inline">
-          Phase 6 · Incidents
+        <span className="hidden whitespace-nowrap rounded-full bg-black/[0.04] px-2.5 py-1 text-[11px] font-medium text-ink-2 min-[1800px]:inline">
+          Phase 7 · Saves
         </span>
       </div>
     </header>

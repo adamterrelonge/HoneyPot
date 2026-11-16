@@ -94,6 +94,22 @@ interface Incident {
   cost: number;
 }
 
+/** Everything the incident engine changes over time, as plain data (saves, Phase 7). */
+export interface IncidentState {
+  mode: GameMode;
+  intensity: Intensity;
+  scenario: Scenario | null;
+  finished: boolean;
+  endTick?: number;
+  incidents: Incident[];
+  seq: number;
+  schedule: { tick: number; kind: IncidentKind }[];
+  decoys: Record<string, boolean>;
+  lost: number;
+  spend: number;
+  costPerMinute: number;
+}
+
 // ── Views for the UI (plain data) ───────────────────────────────────────────
 
 export interface ActionView {
@@ -819,6 +835,34 @@ export class IncidentEngine {
       this.incidents.flatMap((i) => i.encrypted),
       live.filter((i) => ["isp-outage", "dns-misconfig", "cert-expired"].includes(i.kind)).map((i) => i.target),
     ]);
+  }
+
+  // ── Saves (Phase 7) ───────────────────────────────────────────────────────
+
+  exportState(): IncidentState {
+    return JSON.parse(
+      JSON.stringify({
+        mode: this.mode, intensity: this.intensity, scenario: this.scenario, finished: this.finished, endTick: this.endTick,
+        incidents: this.incidents, seq: this.seq, schedule: this.schedule, decoys: Object.fromEntries(this.decoys),
+        lost: this.lost, spend: this.spend, costPerMinute: this.costPerMinute,
+      }),
+    ) as IncidentState;
+  }
+
+  importState(s: IncidentState): void {
+    const c = JSON.parse(JSON.stringify(s)) as IncidentState;
+    this.mode = c.mode;
+    this.intensity = c.intensity;
+    this.scenario = c.scenario;
+    this.finished = c.finished;
+    this.endTick = c.endTick;
+    this.incidents = c.incidents;
+    this.seq = c.seq;
+    this.schedule = c.schedule;
+    for (const id of this.decoys.keys()) this.decoys.set(id, c.decoys[id] === true);
+    this.lost = c.lost;
+    this.spend = c.spend;
+    this.costPerMinute = c.costPerMinute;
   }
 
   hashPart(): string {

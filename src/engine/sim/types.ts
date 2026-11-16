@@ -136,6 +136,8 @@ export interface Snapshot {
   failuresEnabled: boolean;
   /** Game mode, score, incidents and decoys (Phase 6). */
   game: GameView;
+  /** Undo/redo labels (Phase 7); `locked` while a game runs, because games are final. */
+  history: { undo: string | null; redo: string | null; locked: boolean };
   hash: string;
 }
 

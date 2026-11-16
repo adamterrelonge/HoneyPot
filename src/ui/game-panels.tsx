@@ -4,7 +4,8 @@
  */
 import { useEffect, type ReactNode } from "react";
 import { SCENARIOS, type Intensity } from "../engine/incidents/catalog";
-import type { IncidentView } from "../engine/incidents/engine";
+import type { GameView, IncidentView } from "../engine/incidents/engine";
+import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
@@ -21,14 +22,14 @@ const STATUS: Record<IncidentView["status"], string> = {
   blocked: "bg-ok/12 text-[#1d6b31]",
 };
 const GRADE: Record<string, string> = { A: "text-[#1d6b31]", B: "text-[#1d6b31]", C: "text-[#8a3b00]", D: "text-[#a8000f]", F: "text-[#a8000f]" };
-const card = "rounded-[14px] bg-white/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]";
-const primary = "h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-[#0077ed] disabled:opacity-40";
+export const card = "rounded-[14px] bg-white/70 px-4 py-3 shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.08)]";
+export const primary = "h-8 rounded-[8px] bg-accent px-3 text-[12px] font-semibold text-white hover:bg-[#0077ed] disabled:opacity-40";
 
-function H({ children }: { children: ReactNode }) {
+export function H({ children }: { children: ReactNode }) {
   return <h2 className="pt-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{children}</h2>;
 }
 
-function Modal({ title, icon, onClose, children }: { title: string; icon: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, icon, onClose, children }: { title: string; icon: string; onClose: () => void; children: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -271,6 +272,26 @@ export function IncidentsPanel({ width }: { width: number }) {
 
 // ── After-action report ──────────────────────────────────────────────────────
 
+/** Download the report as Markdown, named after the business and the date. */
+function exportReport(g: GameView): void {
+  const meta = useApp.getState().topology.meta;
+  const minute = useSim.getState().snap?.minute ?? 0;
+  const now = new Date();
+  const md = reportMarkdown(g, {
+    business: meta.name,
+    minute,
+    exportedAt: now.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }),
+  });
+  const slug = meta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
+  const url = URL.createObjectURL(new Blob([md], { type: "text/markdown;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${slug}-after-action-report-${now.toISOString().slice(0, 10)}.md`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  sim.notify(`Report exported: ${a.download}`);
+}
+
 export function ReportSheet() {
   const open = useApp((s) => s.reportOpen);
   const setOpen = useApp((s) => s.setReportOpen);
@@ -285,6 +306,14 @@ export function ReportSheet() {
   ];
   return (
     <Modal title="After-action report" icon="/emoji/shield.png" onClose={() => setOpen(false)}>
+      <div className="mb-3 flex items-center gap-2">
+        <p className="flex-1 text-[12px] text-ink-2">
+          {g.finished ? "Final results." : "The game is still running: these are the results so far."}
+        </p>
+        <button className={primary} onClick={() => exportReport(g)}>
+          Export .md
+        </button>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {tiles.map(([k, v, sub]) => (
           <div key={k} className={card}>

@@ -678,3 +678,135 @@ command log replays to an identical hash, and incidents are part of that hash.
    watch only?
 3. **Saves:** autosave plus named slots, or named saves only? Keep how many autosaves?
 4. **Report export:** PDF, Markdown, or both? Share codes as a URL (`?s=…`) or a copyable text code?
+
+---
+
+## Phase 7 — Undo, saves & sharing · 2026-11-16 · ✅ complete
+
+Decisions applied: each game is final once played; no rewind; autosave each simulated day plus named slots, with
+a notice; report export as `.md`; share codes as a code you copy.
+
+### 1. Summary
+- **Undo/redo** (↶ ↷ in the top bar, ⌘/Ctrl+Z, ⌘/Ctrl+Shift+Z or Ctrl+Y):
+  - Covers power, isolation, links, firewall rules (add, edit, move, remove), disable access, roles, per-app
+    access, MFA, decoys, the failures switch, and tonight's scheduled installs.
+  - It reverses the change *now* and never rewinds the clock. The reversing command is logged, so replays
+    stay exact.
+  - Tooltips name the change ("Undo: Reception PC isolated from the network").
+  - **Games are final:** starting a game clears the history, and undo stays off until the game ends. The
+    tooltip says why.
+- **Saves** (new **Saves** button, plus **Open a save…** in the wizard):
+  - Named saves: optional name, defaulting to "business · day time".
+  - **Autosave at the start of every simulated day**, with a toast: "✓ Autosaved · Harbour & Finch
+    Accountants · Tue 00:00". The newest 7 are kept.
+  - Load (with a "Replace the current session?" confirmation), Copy code, Delete.
+- **Saves restore the exact state** instead of replaying the log, because replaying is too slow (measured:
+  about 1 s per simulated day for the sample, 2 s for a mid-size business, 10 s for an enterprise).
+  - Every save carries a snapshot hash. Loading recomputes it and refuses anything that doesn't match.
+  - The command log is still inside each save.
+- **Share codes:** "Copy share code" copies `HONEYPOT1-…` to the clipboard and also shows it in a box to copy
+  by hand. "Open a share code" loads one, even if it was wrapped across lines.
+  - Generated businesses travel as their wizard spec, so codes stay short: about 5k characters for the
+    sample, about 21k for an enterprise.
+- **After-action report → `.md`:** an **Export .md** button on the report downloads
+  `<business>-after-action-report-<date>.md`. It contains the summary table, objectives, and every incident
+  (including undetected ones) with times, cost, footholds, timeline and lessons.
+
+### 2. Tests run
+| Command | Result |
+|---|---|
+| `npm run check` (typecheck app + engine, Vitest, `vite build`) | ✅ 145/145 tests (19 new), build OK |
+| `src/engine/save/save.test.ts` (new) | ✅ 7 |
+| `src/engine/sim/history.test.ts` (new) | ✅ 6 |
+| `src/engine/incidents/report.test.ts` (new) | ✅ 2 |
+| `src/persist/share.test.ts` (new) | ✅ 4 |
+
+What the new tests cover:
+- **Saves:**
+  - A mid-game save, with ransomware and DDoS in flight, a scheduled install and a deployed decoy, restores
+    to the same hash and state.
+  - Run on for 13 more simulated hours (through the 22:00 window), the restored copy and the original stay
+    identical.
+  - The command log is kept.
+  - Tampered saves are rejected (erasing losses breaks the hash), as are saves for a different business.
+  - A generated business is stored as its spec and regenerates exactly.
+  - Save descriptions are correct.
+- **Undo:**
+  - Each of 15 different change types undoes back to the starting settings and redoes forward again.
+  - Undo never moves the clock.
+  - A running install isn't undoable, but earlier changes still are.
+  - A new change clears redo.
+  - Games are final: history is cleared when a game starts, undo is refused while it runs, and history
+    resumes after it ends.
+  - Undo and redo are logged, so `Simulation.replay` matches the hash.
+- **Report:** a finished scenario exports its title, score, objectives, every incident and every timeline
+  line. Undetected incidents are included.
+- **Share codes:**
+  - Round trip with line wrapping reproduces the same hash.
+  - Size limits hold.
+  - Bad and truncated codes give readable errors.
+  - Autosave pruning keeps the newest 7 and never prunes named saves.
+
+**Visual checks** (Chrome, sample business):
+- **Undo:** isolating Reception PC gave "Undo: Reception PC isolated from the network". Ctrl+Z reconnected
+  it and Redo was offered.
+- **Saves sheet:** it renders. Save gave "✓ Saved …".
+- **Share code:** Copy share code gave "✓ Share code copied (5,088 characters)". Pasting that code and
+  pressing Open gave "✓ Opened Harbour & Finch Accountants from a share code".
+- **Autosave:** at 16×, the toast "✓ Autosaved · Harbour & Finch Accountants · Tue 00:00" appeared exactly at
+  midnight (55 s of real time). The autosave was listed as "Day 2", and loading it restored the map at TUE
+  00:00 with all services healthy.
+- **Games are final:** during the *Monday morning ransomware* scenario the undo tooltip read "Games are
+  final: undo is off until the game ends".
+- **Report:** after the scenario ended, the report showed "Final results" and Export .md produced
+  `harbour-finch-accountants-after-action-report-2026-11-16.md` with a confirmation toast. This also covers
+  Phase 6's open item: the report sheet is now checked visually.
+- No console errors or warnings.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Replay-based loading would take about 50 s for a five-day enterprise save | Every tick evaluates every flow | Saves store the full state instead (all randomness is stateless, so that's plain data), and a hash check proves exactness |
+| A save's map could receive snapshots before the UI switched to it | Comlink delivers worker callbacks before the method's return value | Two-step load: `prepareSave` verifies and returns the topology, the UI swaps the map, then `activateSave` starts the session |
+| Autosaves could land a few minutes after midnight | The worker advances in batches of up to 64 ticks | Batches stop exactly at midnight |
+| The undo round-trip test "failed" on a rule move | The move to #4 was clamped to the rule's own position (only two rules), so it was a no-op and correctly not recorded | Test moves to #1 |
+| Undoing a per-app access change left `access: {files: "read"}` instead of no entry | The inverse stores the effective value explicitly | Behaviourally identical (the default is read); the test compares effective access |
+| A named save's default name showed the time the sheet *opened* (08:50) for a save taken at 09:05 | The name was prefilled on open | The name is now blank with a placeholder, and the default is stamped at save time |
+| The "Phase 7" pill wrapped onto two lines | Top bar crowded by Saves and undo/redo | The pill shows only at ≥ 1800 px, without wrapping |
+
+### 4. Known limitations / debt
+- **Loading an earlier save during a game works**, so a player could reload to escape a bad decision.
+  Undo is locked, but saves aren't (see decision 1 below).
+- Undo history isn't saved; loading a save starts with empty history.
+- A save that no longer reproduces (e.g. after a future engine change) is refused rather than migrated. Save
+  versioning and migrations come only once there is a v2 format.
+- Share codes for big businesses (about 21k characters) are fine for the clipboard but too long for some
+  chat apps' message limits.
+- IndexedDB itself has no automated test (no browser in Vitest). It was checked by hand in Chrome; the
+  pruning rule is unit-tested.
+
+### 5. Ideas for later
+- "Ironman" option: one autosave slot overwritten during a game, so games stay final even across loads.
+- Export and import a save as a `.json` file (same format as share codes, uncompressed).
+- Show the attacker's path from the report on the map.
+- Compare two reports (before and after hardening) side by side.
+- Undo history panel listing the last few changes.
+
+### 6. Hand-off for Phase 8 — Polish, accessibility & performance
+**Start at:** `build.md` §8 Phase 8. Proposed scope:
+- An accessible **table view** mirroring the map (devices, status, links), plus keyboard navigation across
+  the map and panels.
+- **Reduced motion** (no particles, no animated camera) honouring the OS setting.
+- **Dark mode.**
+- A **guided tutorial scenario.**
+- A **performance pass:** enterprise snapshot size, worker → UI payload, and fps budget re-checked with
+  incidents running.
+
+**Decisions needed from you:**
+1. **Saves during games:** keep loading free (players can reload an earlier save mid-game), or add an
+   "ironman" rule so a game in progress can only be continued, never reloaded from earlier?
+2. **Dark mode:** follow the system setting automatically, add a manual toggle, or both?
+3. **Tutorial:** a short guided scenario (about 10 steps: trace, isolate, firewall rule, patch, a small
+   incident), or tooltips on first use only?
+4. **Accessibility target:** aim for WCAG 2.2 AA throughout (the table view, focus order, contrast in both
+   themes), or AA for panels only with the map as a visual extra?

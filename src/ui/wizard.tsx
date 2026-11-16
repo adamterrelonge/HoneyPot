@@ -257,6 +257,15 @@ export function Wizard() {
             )}
           </div>
           <button
+            onClick={() => {
+              useApp.getState().setWizardOpen(false);
+              useApp.getState().setSavesOpen(true);
+            }}
+            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent hover:bg-accent/10"
+          >
+            Open a save…
+          </button>
+          <button
             onClick={() => loadBusiness(sampleTopology)}
             className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent hover:bg-accent/10"
           >

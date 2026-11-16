@@ -17,8 +17,8 @@ import type { Link, NetNode, NodeKind, Role, RoleDef, Rule, Topology, Zone, Zone
 import {
   PERSON_KINDS, ROLE_INFO, accessFor, decide, defaultRole, describeSelector, resolveRoles, type Decision,
 } from "../policy/policy";
-import { Lifecycle } from "../firmware/lifecycle";
-import { IncidentEngine, type World } from "../incidents/engine";
+import { Lifecycle, type LifecycleState } from "../firmware/lifecycle";
+import { IncidentEngine, type IncidentState, type World } from "../incidents/engine";
 import { blockRuleId, parseCommand, type Command, type CommandResult, type LoggedCommand } from "./commands";
 import { minuteOfTick, windowCurve, workdayCurve } from "./clock";
 import { APP_INFO, appLabel, deriveDemands, needsFor, serviceLabel, serviceOfHost } from "./demands";
@@ -59,6 +59,40 @@ interface Hop {
   /** True when the path walks the link from a → b. */
   forward: boolean;
 }
+
+/**
+ * Everything that changes over time, as plain JSON (saves and share codes, Phase 7). Together
+ * with the topology and seed it restores a session exactly; all randomness is stateless
+ * (`noise(seed, tick)`), so there is no RNG stream to capture.
+ */
+export interface SimState {
+  v: 1;
+  tick: number;
+  powered: Record<string, boolean>;
+  isolated: Record<string, boolean>;
+  linkUp: Record<string, boolean>;
+  rules: Rule[];
+  roles: Record<Role, RoleDef>;
+  nodeRole: Record<string, Role>;
+  level: number[];
+  burst: number[];
+  log: LoggedCommand[];
+  events: SimEvent[];
+  eventSeq: number;
+  prevApp: Record<string, FlowStatus>;
+  congested: string[];
+  lifecycle: LifecycleState;
+  incidents: IncidentState;
+}
+
+/** One undoable change: the command and the command that reverses it. */
+interface HistoryEntry {
+  label: string;
+  redo: Command;
+  undo: Command;
+}
+
+const HISTORY_LIMIT = 100;
 
 export interface SimOptions {
   seed?: number;
@@ -113,6 +147,9 @@ export class Simulation {
   pathComputations = 0;
 
   private log: LoggedCommand[] = [];
+  /** Undo/redo (Phase 7). Off while a game runs and cleared when one starts: games are final. */
+  private undoStack: HistoryEntry[] = [];
+  private redoStack: HistoryEntry[] = [];
   private events: SimEvent[] = [];
   private eventSeq = 0;
 
@@ -247,12 +284,52 @@ export class Simulation {
 
   /** Validate and apply a command at the current tick. */
   dispatch(input: unknown): CommandResult {
+    return this.run(input, true);
+  }
+
+  /**
+   * Reverse the most recent undoable change, now. Time is never rewound: the reversing command
+   * is applied at the current tick and logged like any other, so replays stay exact.
+   */
+  undo(): CommandResult {
+    if (this.incidents.playing) return { ok: false, error: "Games are final: undo is off until the game ends" };
+    const e = this.undoStack.pop();
+    if (!e) return { ok: false, error: "Nothing to undo" };
+    const res = this.run(e.undo, false);
+    if (res.ok) this.redoStack.push(e);
+    return res;
+  }
+
+  redo(): CommandResult {
+    if (this.incidents.playing) return { ok: false, error: "Games are final: redo is off until the game ends" };
+    const e = this.redoStack.pop();
+    if (!e) return { ok: false, error: "Nothing to redo" };
+    const res = this.run(e.redo, false);
+    if (res.ok) this.undoStack.push(e);
+    return res;
+  }
+
+  private run(input: unknown, record: boolean): CommandResult {
     const cmd = parseCommand(input);
     if ("error" in cmd) return { ok: false, error: cmd.error };
+    const playing = this.incidents.playing;
+    const inverse = record && !playing ? this.inverse(cmd) : null;
     const res = this.apply(cmd);
     if (!res.ok) return res;
     if (res.noop) return { ok: true };
     this.log.push({ tick: this._tick, cmd });
+    if (record) {
+      if (playing || cmd.type === "game.start") {
+        this.undoStack = [];
+        this.redoStack = [];
+      } else {
+        this.redoStack = [];
+        if (inverse) {
+          this.undoStack.push({ label: res.text, redo: cmd, undo: inverse });
+          if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
+        }
+      }
+    }
     // Topology changed → reachability and every demand's path are recomputed lazily.
     this.trees.clear();
     this.resolved = [];
@@ -282,8 +359,78 @@ export class Simulation {
       devices: this.lifecycle.snapshot(),
       failuresEnabled: this.lifecycle.failuresEnabled,
       game: this.incidents.view(this._tick, { usable: (id) => this.usable(id) }),
+      history: {
+        undo: this.undoStack.at(-1)?.label ?? null,
+        redo: this.redoStack.at(-1)?.label ?? null,
+        locked: this.incidents.playing,
+      },
       hash: this.hash(),
     };
+  }
+
+  // ── Saves (Phase 7) ───────────────────────────────────────────────────────
+
+  exportState(): SimState {
+    const state: SimState = {
+      v: 1,
+      tick: this._tick,
+      powered: Object.fromEntries(this.powered),
+      isolated: Object.fromEntries(this.isolated),
+      linkUp: Object.fromEntries(this.linkUp),
+      rules: this.rules,
+      roles: this.roles,
+      nodeRole: Object.fromEntries(this.nodeRole),
+      level: Array.from(this.level),
+      burst: Array.from(this.burst),
+      log: this.log,
+      events: this.events,
+      eventSeq: this.eventSeq,
+      prevApp: Object.fromEntries(this.prevApp),
+      congested: [...this.congested],
+      lifecycle: this.lifecycle.exportState(),
+      incidents: this.incidents.exportState(),
+    };
+    return JSON.parse(JSON.stringify(state)) as SimState;
+  }
+
+  /**
+   * Restore a state from `exportState` onto a Simulation built from the same topology and seed.
+   * Only ids that exist in this topology are read. Undo history is not saved.
+   */
+  importState(input: SimState): void {
+    const s = JSON.parse(JSON.stringify(input)) as SimState;
+    if (s.level.length !== this.demands.length || s.burst.length !== this.demands.length) {
+      throw new Error("Save doesn't match this business (different traffic demands)");
+    }
+    const flag = (rec: Record<string, boolean>, id: string, what: string) => {
+      const v = rec[id];
+      if (typeof v !== "boolean") throw new Error(`Save has no ${what} state for "${id}"`);
+      return v;
+    };
+    this._tick = s.tick;
+    for (const id of this.powered.keys()) this.powered.set(id, flag(s.powered, id, "power"));
+    for (const id of this.isolated.keys()) this.isolated.set(id, flag(s.isolated, id, "isolation"));
+    for (const id of this.linkUp.keys()) this.linkUp.set(id, flag(s.linkUp, id, "link"));
+    this.rules = s.rules;
+    this.roles = s.roles;
+    for (const id of this.nodeRole.keys()) {
+      const role = s.nodeRole[id];
+      if (role && role in ROLE_INFO) this.nodeRole.set(id, role);
+    }
+    this.level.set(s.level);
+    this.burst.set(s.burst);
+    this.log = s.log;
+    this.events = s.events;
+    this.eventSeq = s.eventSeq;
+    this.prevApp = new Map(Object.entries(s.prevApp) as [AppId, FlowStatus][]);
+    this.congested = new Set(s.congested);
+    this.lifecycle.importState(s.lifecycle);
+    this.incidents.importState(s.incidents);
+    this.undoStack = [];
+    this.redoStack = [];
+    this.invalidate();
+    this.effectKey = this.incidents.effectKey();
+    this.evaluate(true);
   }
 
   /** Deterministic fingerprint of the observable state. */
@@ -316,6 +463,62 @@ export class Simulation {
   }
 
   // ── Commands ──────────────────────────────────────────────────────────────
+
+  /**
+   * The command that reverses `cmd`, computed from the state before it is applied. Null for
+   * things that can't be taken back (installs already running, failures, incidents, games).
+   */
+  private inverse(cmd: Command): Command | null {
+    switch (cmd.type) {
+      case "link.setStatus":
+        return { ...cmd, status: this.linkUp.get(cmd.linkId) ? "up" : "down" };
+      case "node.setPower":
+        return { ...cmd, on: this.powered.get(cmd.nodeId) ?? true };
+      case "node.setIsolated":
+        return { ...cmd, isolated: this.isolated.get(cmd.nodeId) ?? false };
+      case "policy.addRule":
+        return { type: "policy.removeRule", ruleId: cmd.rule.id };
+      case "policy.updateRule": {
+        const r = this.rules.find((x) => x.id === cmd.ruleId);
+        if (!r) return null;
+        const before = Object.fromEntries(Object.keys(cmd.patch).map((k) => [k, r[k as keyof Rule]]));
+        return { type: "policy.updateRule", ruleId: r.id, patch: JSON.parse(JSON.stringify(before)) as typeof cmd.patch };
+      }
+      case "policy.moveRule": {
+        const i = this.rules.findIndex((x) => x.id === cmd.ruleId);
+        return i < 0 ? null : { ...cmd, index: i };
+      }
+      case "policy.removeRule": {
+        const i = this.rules.findIndex((x) => x.id === cmd.ruleId);
+        return i < 0 ? null : { type: "policy.addRule", rule: { ...this.rules[i]!, services: [...this.rules[i]!.services] }, index: i };
+      }
+      case "node.setAccess":
+        return { ...cmd, blocked: this.rules.some((r) => r.id === blockRuleId(cmd.nodeId)) };
+      case "node.setRole": {
+        const role = this.nodeRole.get(cmd.nodeId);
+        return role ? { ...cmd, role } : null;
+      }
+      case "identity.setAccess":
+        return { ...cmd, access: accessFor(this.roles, cmd.role, cmd.app) };
+      case "identity.setMfa":
+        return { ...cmd, enabled: this.roles[cmd.role].mfa };
+      case "hardware.setFailures":
+        return { ...cmd, enabled: this.lifecycle.failuresEnabled };
+      case "decoy.setDeployed":
+        return { ...cmd, deployed: !this.incidents.isDormantDecoy(cmd.nodeId) };
+      case "firmware.install": {
+        if (cmd.when !== "tonight") return null; // already running: roll back instead
+        const prev = this.lifecycle.scheduledVersion(cmd.nodeId);
+        return prev ? { ...cmd, version: prev } : { type: "firmware.cancel", nodeId: cmd.nodeId };
+      }
+      case "firmware.cancel": {
+        const prev = this.lifecycle.scheduledVersion(cmd.nodeId);
+        return prev ? { type: "firmware.install", nodeId: cmd.nodeId, version: prev, when: "tonight" } : null;
+      }
+      default:
+        return null;
+    }
+  }
 
   private apply(
     cmd: Command,

@@ -59,7 +59,7 @@ sends network traffic beyond loading its own assets.
 | Font | System stack → **Inter Variable** fallback | SF Pro can't be redistributed, so Apple devices get it natively. |
 | Tests | **Vitest** (engine and math), Chrome DevTools/Playwright for visual checks | |
 | Worker RPC | **Comlink 4** | `src/worker/sim.worker.ts` exposes `SimHost`. |
-| Persistence | IndexedDB via Dexie *(Phase 7)* | |
+| Persistence | IndexedDB via a ~70-line wrapper (Phase 7; Dexie wasn't needed for one object store) | |
 
 ### Device artwork
 Device images in `public/emoji/` may be **any aspect ratio** (the project now uses custom images alongside Fluent
@@ -141,12 +141,16 @@ src/
     gen/         spec (BusinessSpec + wizard metadata), generate (templates → TopologyInput)
     policy/      policy.ts: rule matching, decisions, roles (pure)
     firmware/    catalog.ts (products, releases, real CVE advisories), lifecycle.ts (installs, failures)
-    incidents/   catalog.ts (10 incident kinds, actions, costs, scenarios), engine.ts (kill chains, detection, scoring)
+    incidents/   catalog.ts (10 incident kinds, actions, costs, scenarios), engine.ts (kill chains, detection, scoring),
+                 report.ts (after-action report as Markdown)
+    save/        save.ts (save format, business refs, restore + hash check)
   worker/        sim.worker.ts: owns the Simulation, drives the clock, pushes snapshots (Comlink)
   render/        geometry.ts + routing.ts (pure math, tested), theme.ts, scene.ts (Pixi), NetworkCanvas.tsx
-  state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade)
+  state/         store.ts (UI state + static layout), sim.ts (snapshot mirror + command facade, autosaves)
+  persist/       db.ts (IndexedDB save slots), share.ts (share codes)
   ui/            React components (glass panels): panels.tsx, sim-panels.tsx, wizard.tsx, policy-panels.tsx,
-                 lifecycle-panels.tsx, game-panels.tsx (Play sheet, HUD, incidents, after-action report)
+                 lifecycle-panels.tsx, game-panels.tsx (Play sheet, HUD, incidents, after-action report),
+                 save-panels.tsx (undo/redo, Saves sheet, notices)
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -406,7 +410,41 @@ standard = one or two behind, generous = latest. The generator ships firmware th
 - **After-action report:** every incident, including undetected ones, with its timeline, cost and lessons,
   plus objectives and the grade.
 
-**Planned additions:** Phase 7 `SaveGame` (topology + seed + command log), share codes.
+**Phase 7 additions** (`engine/save`, `persist/`):
+- **Undo/redo** lives in the Simulation:
+  - Before each command it computes the inverse from the current state: previous power, rule, role,
+    access, MFA, decoy, failures switch, tonight's scheduled install.
+  - Undo applies that inverse *at the current tick*, logged like any command. The clock never goes back, and
+    replays stay exact.
+  - Not undoable: installs already running, rollbacks, device failures, incidents, games. They don't block
+    undoing earlier changes.
+  - A new change clears redo. The history holds 100 entries.
+  - **Games are final:** `game.start` clears history, and undo/redo are refused while a game runs.
+  - The snapshot gains `history: {undo, redo, locked}` (button labels).
+- **Saves restore state; they don't replay.** Replaying costs ≈ 1 s per simulated day for the sample,
+  2 s for a mid-size business and 10 s for an enterprise (measured).
+  - `Simulation.exportState()` / `importState()` hold every changing value, including the noise smoothing
+    arrays, the command log, events, and the lifecycle and incident engines.
+  - All randomness is `noise(seed, tick)`, so there's no RNG stream to capture.
+  - The save format is `SaveFile {format: "honeypot-save", v: 1, business, seed, hash, state}`.
+  - The business is stored as its wizard spec when regenerating reproduces the topology exactly; otherwise
+    (the sample, hand-made topologies) as the full topology.
+  - Loading recomputes the snapshot hash and rejects any mismatch: tampering, a business that no longer
+    matches, or engine changes since the save.
+- **Loading** happens in two steps in the worker: `prepareSave` verifies, the UI swaps the map, then
+  `activateSave` switches sessions. No snapshot can arrive for a map that isn't shown yet.
+- **Storage:** IndexedDB database `honeypot`, store `saves`. Records are
+  `{id, kind: auto|named, name, createdAt, summary, save}`.
+  - Autosaves: the worker stops a batch of ticks exactly at midnight and hands over a save. The newest 7
+    are kept, and a notice reads "Autosaved · <business> · Tue 00:00".
+- **Share codes:** `HONEYPOT1-` + base64url(deflate-raw(JSON)). Pasted whitespace is ignored, and bad codes
+  get a readable error.
+  - Sizes: about 5k characters for the sample, about 21k for an enterprise (it travels as its spec).
+- **Report export:** `reportMarkdown(game, info)` produces a summary table, objectives, and every
+  incident (including undetected ones) with times, cost, footholds, timeline and lessons.
+  - Downloaded as `<business>-after-action-report-<date>.md`.
+
+**Planned additions:** Phase 8 none for the data model (polish and accessibility).
 
 ---
 
@@ -501,9 +539,14 @@ criteria pass and a diary entry exists.
 - Event log with causes. **Honeypot/decoy nodes** as a defensive tool.
 - **Done when:** each incident has a seeded test covering progress and containment.
 
-### Phase 7 — Time travel & persistence
-- Undo/redo, replay timeline scrubber, after-action report export (the report itself shipped in Phase 6).
-- Save/load in IndexedDB, export/import JSON, share codes (seed + command log).
+### Phase 7 — Undo, saves & sharing ✅ (2026-11-16)
+- Undo/redo of player changes, applied *now* (no rewinding); after-action report export as `.md`.
+- Named saves plus a daily autosave in IndexedDB, with a notice when it happens; copyable share codes.
+- Decisions: each game is final once played (no undo during a game); no rewind or timeline scrubber;
+  autosave at the start of each simulated day plus named slots; report export as Markdown; share codes
+  as a code you copy.
+- **Done when:** a restored save carries on identically to the original; every undoable command
+  round-trips; share codes decode to the same hash.
 
 ### Phase 8 — Polish, accessibility & performance
 - Accessible table view that mirrors the canvas, keyboard navigation, reduced-motion support,
