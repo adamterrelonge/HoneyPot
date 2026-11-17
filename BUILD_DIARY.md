@@ -959,3 +959,127 @@ All eight phases in `build.md` are complete. Next steps are your call. Options, 
    commit or one per phase?
 3. Should the app support smaller screens (tablet width), or stay desktop-only?
 4. Any CVE spot-check findings from the Phase 5 catalogue to correct?
+
+---
+
+## Phase 9 — Content & tablets · 2026-11-17 · ✅ complete
+
+Decisions applied (answering the Phase 8 hand-off): content first, as new incident types and scenarios; two new
+industries, Education and Logistics; every CVE checked against public sources; tablet support in landscape and
+portrait. The project is now a git repository with one commit per phase (`M1` … `M9`), pushed to
+`github.com/adamterrelonge/HoneyPot`.
+
+### 1. Summary
+- **Four new incident types** (14 in total):
+  - **Compromised software update** (supply chain).
+    - Backdoors land on two servers and a desktop group at once.
+    - They survive a password reset. "Remove the backdoored update" (2 h, £3k) evicts them.
+    - Exfiltration is low and slow (2 Mbps from one server), and detection comes at 8 h.
+  - **Credential stuffing on the VPN.**
+    - A login storm is detected at 15 min.
+    - A reused password works after 30–75 min if any role lacks MFA.
+    - Turning on MFA, blocking the attacking IPs or taking the VPN offline in time stops it.
+    - Once in, a password reset evicts the attacker, even though the VPN has exploitable CVEs (the foothold
+      came from a login, not an exploit).
+  - **Ransomware on the production line** (OT).
+    - Spreads from the office to PLCs and clinical imaging devices over their own services (production,
+      imaging).
+    - Weighted 20× towards OT, and waits up to 6 extra moves to reach it before encrypting.
+    - Restores: controller programs from the engineering backup (3 h, £3k), or a vendor re-image for
+      clinical devices (4 h, £2.5k).
+    - Blocked on businesses with no OT devices to target.
+  - **Invoice fraud** (business email compromise).
+    - An urgent bank-change request to Finance for £5k + £150 per employee, with a 90–150 min deadline.
+    - "Phone the supplier" (15 min) stops it. Otherwise the amount is lost.
+    - If the finance role has no MFA, the mailbox itself was taken over, and a password reset is also needed.
+- **Scenarios:** 12 in total, with an optional `industries` filter.
+  - The Play sheet shows only scenarios that fit the business, and the engine refuses a mismatch.
+  - New: The poisoned update, Dawn raid on the VPN, Payroll Friday, Line down (manufacturing), Clinic under
+    siege (healthcare), Exam season (education), Peak dispatch (logistics).
+- **Industries** (6 in total):
+  - **Education:**
+    - Departments: Teaching, Leadership, Finance & Admin, Pastoral & SEN, Support Staff.
+    - Student Records (MIS, `student-data`) and a Parent Portal.
+    - A Student Wi-Fi zone with 3 devices per staff member, on guest rules (internet only).
+    - Branch sites are called "Campus".
+  - **Logistics:**
+    - A Warehouse Floor (the factory zone kind) at HQ and in every depot.
+    - Handheld scanners (40% of site staff), label printers and dock cameras.
+    - Its app is "Warehouse scanning" to the WMS, costing £0.90 per user-minute.
+    - Branch sites are called "Depot".
+  - The original four industries generate byte-for-byte identically, so old saves and share codes still load.
+- **CVE check:** all 19 advisories checked against the live NVD API and the CISA KEV feed.
+  - Four CVSS scores corrected: CVE-2017-0144 8.1→8.8, CVE-2017-7921 10→9.8, CVE-2021-39238 9.3→9.8,
+    CVE-2022-1161 10→9.8.
+  - Every KEV flag and product attribution matched.
+- **Tablets** (`state/viewport.ts`: compact < 1280 px, narrow < 900 px):
+  - Compact: the device list and services panel become drawers (top-bar "Devices" and "Services"), and the
+    secondary actions move into a "More" disclosure.
+  - Narrow (portrait): picking a device closes the drawer, and panels are capped to the screen width.
+  - The top bar wraps when it must, and panels follow its measured height (`--top`).
+  - Map gestures: one-finger pan, two-finger pinch-zoom plus pan.
+  - Coarse pointers get 36 px targets, and the hints say "tap" and "pinch".
+- **Fix:** once a game ends, attackers stop, so the after-action report stays final.
+- **README.md** added for the public repository.
+
+### 2. Tests run
+| Command | Result |
+|---|---|
+| `npm run check` (typecheck app + engine, Vitest, `vite build`) | ✅ 186/186 tests in 16 files (28 new since Phase 8), build OK |
+| `src/engine/incidents/incidents-p9.test.ts` (new) | ✅ 20 tests, listed below |
+| `src/engine/firmware/cve.test.ts` (new) | ✅ 2 tests, listed below |
+| `npm ci` on a clean checkout | ❌ then ✅ after the lockfile was synced (see §3) |
+
+What the new tests cover:
+- **Compromised update:** lands on several machines at once and survives a password reset; removing the
+  update evicts the attacker; stays quiet for hours unless something gives it away.
+- **Credential stuffing:** login storm then break-in when MFA is off; MFA in time shuts it out; blocking the
+  IPs in time ends it; a password reset evicts the attacker despite the VPN's CVEs.
+- **OT ransomware:** needs controllers or clinical devices; on a flat network it reaches the controllers and
+  stops production; segmenting every path to the factory floor keeps it off them.
+- **Invoice fraud:** the payment is lost if nobody checks before the deadline; phoning the supplier stops it;
+  a taken-over mailbox also needs a password reset.
+- **Scenarios:** there are 12, all valid, and industry ones appear only for their industry; a mismatch is
+  refused; every scenario plays to the end on a business it is written for.
+- **After a game:** the report is final, and stolen data and losses stop growing.
+- **Industries:** education student Wi-Fi is busy and reaches only the internet; logistics scanners keep the
+  WMS busy at HQ and every depot; all six industries are offered.
+- **CVE facts:** every advisory matches the checked NVD score and KEV status; severity labels follow the
+  CVSS v3 bands.
+
+Not re-recorded in this entry:
+- The Lighthouse accessibility score at tablet portrait size (a "Done when" criterion), and the hashing of
+  144 spec combinations against the Phase 8 commit. The figures above come from the build plan. Re-run and
+  record them before treating those criteria as evidenced here.
+
+Build output: the main `index` chunk is 923 kB (264 kB gzipped). Vite warns that it is over 500 kB.
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Exfiltration and payouts kept growing after "Final results" | Attackers kept running after the game ended | Incidents stop when the game ends |
+| CVSS scores for 4 CVEs disagreed with NVD | The Phase 5 values were wrong | Corrected from the live NVD API; pinned in `cve.test.ts` |
+| `npm ci` failed on a clean clone: `Missing: @emnapi/core@2.0.0-beta.2 from lock file` | `package-lock.json` out of sync with `package.json` | `npm install` regenerated the lockfile; commit it with this entry |
+| `bash.exe.stackdump` was committed in `M9` | MSYS crash dump in the project folder; not in `.gitignore` | Remove it and add `*.stackdump` to `.gitignore` |
+
+### 4. Known limitations / debt
+- The manual accessibility pass (screen readers, 200–400% zoom, Windows high contrast) from Phase 8 is still
+  outstanding.
+- Phones are not supported. Below 900 px wide, only tablet portrait has been designed for.
+- The map is still pointer- and touch-only; keyboard users use the device list, inspector and table view.
+- The main bundle is over Vite's 500 kB warning limit.
+- No licence has been chosen, so the public repository is "all rights reserved".
+
+### 5. Ideas for later
+- Code-split the panels and the Play/Saves sheets with dynamic `import()` to shrink the main chunk.
+- A CI workflow running `npm ci && npm run check` on every push, so lockfile drift is caught at once.
+- A scenario editor, now that scenarios have an `industries` filter.
+- Detection tools you can buy (EDR, SIEM) that shorten the supply-chain incident's 8 h detection time.
+
+### 6. Hand-off
+All nine phases in `build.md` are complete.
+
+**Decisions needed from you:**
+1. Which licence should the public repository use (for example MIT), or should it stay all rights reserved?
+2. Should a GitHub Actions CI workflow be added?
+3. Which direction next: the manual accessibility audit, simulation depth, or sharing beyond one browser?
