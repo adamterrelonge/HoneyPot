@@ -175,6 +175,7 @@ src/
                  save-panels.tsx (undo/redo, Saves sheet, notices), tour.tsx (guided tour),
                  a11y-panels.tsx (theme toggle, table view, skip links, live announcer), a11y.ts (dialog focus)
   state/prefs.ts per-browser preferences: theme, reduced motion, "Don't ask again"
+  state/viewport.ts screen size classes (compact < 1280 px, narrow < 900 px) for the tablet layout
   data/          topology & scenario JSON
 public/emoji/    Fluent 3D emoji PNGs (MIT)
 ```
@@ -491,7 +492,7 @@ standard = one or two behind, generous = latest. The generator ships firmware th
 | Devices | status, CPU/mem load as %, firmware version, config flags, lifespan | real OS behaviour |
 | Firmware | catalogue with real CVE references, stability, update downtime, config-migration and brick risk, rollback, provider-managed kit, a 22:00 maintenance window | binary images, staged rollouts, vendor support contracts |
 | Hardware | age, per-kind failure rates compressed ×52, 2–6 h repairs, 4 h brick replacement | spares on site, partial group failures, warranty |
-| Attacks | kill chains: initial access (default password / phishing without MFA / exploited CVE) → lateral moves limited by real reachability and firewall rules → encrypt or exfiltrate; decoys alarm when touched | real exploit code (never), persistence, EDR, attacker adaptation |
+| Attacks | kill chains: initial access (default password / phishing without MFA / exploited CVE / backdoored vendor update / reused VPN password) → lateral moves limited by real reachability and firewall rules (OT targets over their own services) → encrypt or exfiltrate; invoice fraud as a deadline; decoys alarm when touched | real exploit code (never), persistence, EDR, attacker adaptation |
 | Business | £ per affected user-minute per app (idle staff, lost sales, lost output) plus response spend against a budget; score and grade | full accounting, SLAs, reputational and regulatory cost |
 
 ---
@@ -592,6 +593,63 @@ criteria pass and a diary entry exists.
   - Lighthouse accessibility scores 100 in light and dark (including with a dialog open).
   - The tour runs end to end.
   - The enterprise holds ~60 fps in the production build at 16× with incidents running.
+
+### Phase 9 — Content & tablets ✅ (2026-11-17)
+- Decisions: new scenarios and new incident types; Education and Logistics industries; check every
+  CVE against public sources; tablets in landscape and portrait.
+- **Incidents** (14 kinds now):
+  - **Compromised software update** (supply chain): backdoors land on two servers and a desktop group
+    at once. They survive a password reset; "Remove the backdoored update" (2 h, £3k) evicts them.
+    Exfiltration is low and slow (2 Mbps from one server), and detection comes at 8 h.
+  - **Credential stuffing on the VPN:** a login storm is detected at 15 min. A reused password works
+    after 30–75 min if any role lacks MFA. Turning on MFA, blocking the attacking IPs or taking the VPN
+    offline in time stops it. Once in, a password reset evicts the attacker even though the VPN has
+    exploitable CVEs (the foothold came from a login).
+  - **Ransomware on the production line** (OT):
+    - Spreads from the office to PLCs and clinical imaging devices, reaching them over their own
+      services (production, imaging). Weighted 20× towards OT, and waits up to 6 extra moves to reach
+      it before encrypting.
+    - Restores: controller programs from the engineering backup (3 h, £3k), or a vendor re-image for
+      clinical devices (4 h, £2.5k).
+    - Needs OT devices to target; otherwise it's blocked.
+  - **Invoice fraud** (business email compromise):
+    - An urgent bank-change request to Finance, £5k + £150 per employee, with a 90–150 min deadline.
+    - "Phone the supplier" (15 min) stops it. Otherwise the amount is lost.
+    - If the finance role has no MFA, the mailbox itself was taken over, and a password reset is also
+      needed.
+- **Scenarios:** 12, with an optional `industries` filter. The Play sheet shows only those that fit the
+  business, and the engine refuses a mismatch. New: The poisoned update, Dawn raid on the VPN, Payroll
+  Friday, Line down (manufacturing), Clinic under siege (healthcare), Exam season (education), Peak
+  dispatch (logistics).
+- **Industries:**
+  - **Education:** Teaching, Leadership, Finance & Admin, Pastoral & SEN and Support Staff
+    departments; Student Records (MIS, `student-data`); a Parent Portal; a Student Wi-Fi zone with
+    3 devices per staff member, on guest rules (internet only). Branch sites are "Campus".
+  - **Logistics:** a Warehouse Floor (the factory zone kind) at HQ and in every depot, with handheld
+    scanners (40% of site staff), label printers and dock cameras. Its app is "Warehouse scanning"
+    to the WMS, costing £0.90 per user-minute. Branch sites are "Depot".
+  - The original four industries generate byte-for-byte identically: 144 spec combinations were
+    hashed against the previous commit. Old saves and share codes still load.
+- **CVEs:** all 19 checked against the live NVD API and the CISA KEV feed. Four CVSS scores were
+  corrected (CVE-2017-0144 8.1→8.8, CVE-2017-7921 10→9.8, CVE-2021-39238 9.3→9.8,
+  CVE-2022-1161 10→9.8); every KEV flag and product attribution matched. `cve.test.ts` pins the
+  checked values and the severity bands.
+- **Tablets:**
+  - Below 1280 px, the device list and services panel become drawers (top-bar "Devices" and
+    "Services"), and the secondary actions move into a "More" disclosure.
+  - Below 900 px (portrait), picking a device closes the drawer. Panels are capped to the screen
+    width.
+  - The top bar wraps when it must, and panels follow its measured height (`--top`).
+  - Map gestures: one-finger pan, two-finger pinch-zoom plus pan.
+  - Coarse pointers get 36 px targets, and the hints say "tap" and "pinch".
+- **Fix:** once a game ends, attackers stop, so the after-action report stays final. Previously
+  exfiltration and payouts kept growing after "Final results".
+- **Done when:**
+  - Every new incident has seeded tests for progress and each way to stop it.
+  - Every scenario plays to the end on a business it's written for.
+  - Both new industries are healthy at 10:30.
+  - The CVE facts test passes.
+  - Lighthouse accessibility scores 100 at tablet portrait size.
 
 ---
 

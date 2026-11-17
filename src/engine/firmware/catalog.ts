@@ -4,7 +4,8 @@
  * Honeypot's vendors are fictional, but each product line is modelled on a real one and its
  * advisories use the REAL CVE that affected that real product (named in `realWorld`), so learners
  * can look them up. Fixed-in versions are this simulation's own release numbers.
- * Scores are CVSS v3 base scores as published by NVD at the time of writing.
+ * Scores are NVD's CVSS v3 base scores and `exploited` mirrors the CISA KEV catalogue, both checked
+ * against the live NVD API and KEV feed on 2026-11-17 (four scores corrected then).
  */
 import type { Budget, NetNode, NodeKind } from "../model";
 
@@ -121,7 +122,7 @@ export const PRODUCTS: Product[] = [
     id: "camos", vendor: "Optica", name: "CamOS", kinds: ["camera"],
     releases: [r("1.6.0", "2020-05", 0.93, "Stable."), r("1.8.2", "2021-11", 0.93, "Stable."), r("2.0.1", "2023-07", 0.9, "Security release.")],
     advisories: [
-      { cve: "CVE-2017-7921", title: "Improper authentication (unauthenticated access to the camera)", severity: "critical", cvss: 10.0, exploited: true, realWorld: "Hikvision IP cameras", fixedIn: "1.8.2" },
+      { cve: "CVE-2017-7921", title: "Improper authentication (unauthenticated access to the camera)", severity: "critical", cvss: 9.8, exploited: true, realWorld: "Hikvision IP cameras", fixedIn: "1.8.2" },
       { cve: "CVE-2021-36260", title: "Command injection in the web server", severity: "critical", cvss: 9.8, exploited: true, realWorld: "Hikvision IP cameras", fixedIn: "2.0.1" },
     ],
   },
@@ -129,21 +130,21 @@ export const PRODUCTS: Product[] = [
     id: "printos", vendor: "Lumen", name: "PrintOS", kinds: ["printer"],
     releases: [r("2.1.0", "2020-02", 0.95, "Stable."), r("2.3.0", "2021-06", 0.95, "Stable."), r("2.4.2", "2022-01", 0.94, "Security release.")],
     advisories: [
-      { cve: "CVE-2021-39238", title: "Buffer overflow in font parsing (wormable printer takeover)", severity: "critical", cvss: 9.3, exploited: false, realWorld: "HP LaserJet / PageWide (“Printing Shellz”)", fixedIn: "2.4.2" },
+      { cve: "CVE-2021-39238", title: "Buffer overflow in font parsing (wormable printer takeover)", severity: "critical", cvss: 9.8, exploited: false, realWorld: "HP LaserJet / PageWide (“Printing Shellz”)", fixedIn: "2.4.2" },
     ],
   },
   {
     id: "logix", vendor: "Brightline", name: "Logix", kinds: ["plc"],
     releases: [r("31.011", "2020-06", 0.9, "Stable."), r("32.011", "2021-09", 0.9, "Stable."), r("33.015", "2022-06", 0.8, "Security release; requires a line stop.")],
     advisories: [
-      { cve: "CVE-2022-1161", title: "Running code can differ from the programmed project (stealthy modification)", severity: "critical", cvss: 10.0, exploited: false, realWorld: "Rockwell Automation Logix controllers", fixedIn: "33.015" },
+      { cve: "CVE-2022-1161", title: "Running code can differ from the programmed project (stealthy modification)", severity: "critical", cvss: 9.8, exploited: false, realWorld: "Rockwell Automation Logix controllers", fixedIn: "33.015" },
     ],
   },
   {
     id: "imagingos", vendor: "Meridian", name: "ImagingOS", kinds: ["medical"],
     releases: [r("5.2", "2016-11", 0.85, "Embedded Windows base."), r("5.4", "2018-03", 0.85, "Vendor-validated build."), r("6.0", "2021-05", 0.75, "New platform; needs revalidation.")],
     advisories: [
-      { cve: "CVE-2017-0144", title: "SMBv1 remote code execution (EternalBlue, used by WannaCry)", severity: "high", cvss: 8.1, exploited: true, realWorld: "Microsoft Windows SMBv1 (embedded in medical devices)", fixedIn: "6.0" },
+      { cve: "CVE-2017-0144", title: "SMBv1 remote code execution (EternalBlue, used by WannaCry)", severity: "high", cvss: 8.8, exploited: true, realWorld: "Microsoft Windows SMBv1 (embedded in medical devices)", fixedIn: "6.0" },
     ],
   },
   { id: "payos", vendor: "Tillpoint", name: "PayOS", kinds: ["pos"], releases: [r("4.1", "2022-03", 0.95, "Stable."), r("4.2", "2023-05", 0.95, "Stable.")], advisories: [] },

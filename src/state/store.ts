@@ -53,6 +53,11 @@ interface AppState {
   /** Table view: a text equivalent of the map (Phase 8). */
   tableOpen: boolean;
   setTableOpen: (open: boolean) => void;
+  /** Compact screens (Phase 9): the device list and services panel are drawers. */
+  devicesOpen: boolean;
+  servicesOpen: boolean;
+  setDevicesOpen: (open: boolean) => void;
+  setServicesOpen: (open: boolean) => void;
 
   /** Validate and load a topology into the map and the simulation worker. */
   loadBusiness: (input: unknown) => void;
@@ -107,6 +112,10 @@ export const useApp = create<AppState>()((set, get) => ({
   setSavesOpen: (savesOpen) => set({ savesOpen }),
   tableOpen: false,
   setTableOpen: (tableOpen) => set({ tableOpen }),
+  devicesOpen: false,
+  servicesOpen: false,
+  setDevicesOpen: (devicesOpen) => set({ devicesOpen }),
+  setServicesOpen: (servicesOpen) => set({ servicesOpen }),
 
   loadBusiness: (input) => {
     get().showTopology(parseTopology(input));

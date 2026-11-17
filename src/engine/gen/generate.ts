@@ -82,6 +82,20 @@ const DEPTS: Record<BusinessSpec["industry"], Dept[]> = {
     { name: "Sales", share: 0.2, kind: "laptop" },
     { name: "Finance & Admin", share: 0.2, kind: "desktop" },
   ],
+  education: [
+    { name: "Teaching", share: 0.55, kind: "laptop" },
+    { name: "Leadership", share: 0.08, kind: "laptop", tags: ["privileged"] },
+    { name: "Finance & Admin", share: 0.17, kind: "desktop" },
+    { name: "Pastoral & SEN", share: 0.1, kind: "desktop", tags: ["safeguarding"] },
+    { name: "Support Staff", share: 0.1, kind: "desktop" },
+  ],
+  logistics: [
+    { name: "Transport Planning", share: 0.25, kind: "desktop" },
+    { name: "Warehouse Office", share: 0.25, kind: "desktop" },
+    { name: "Customer Service", share: 0.2, kind: "laptop" },
+    { name: "Finance", share: 0.15, kind: "desktop" },
+    { name: "Management", share: 0.15, kind: "laptop", tags: ["privileged"] },
+  ],
 };
 
 const LOB_NAME: Record<BusinessSpec["industry"], [onPrem: string, cloud: string]> = {
@@ -89,12 +103,20 @@ const LOB_NAME: Record<BusinessSpec["industry"], [onPrem: string, cloud: string]
   retail: ["Stock & ERP", "Cloud ERP"],
   healthcare: ["Patient Records", "Cloud Patient Records"],
   manufacturing: ["ERP & MRP", "Cloud ERP"],
+  education: ["Student Records (MIS)", "Cloud MIS"],
+  logistics: ["Warehouse Management (WMS)", "Cloud WMS"],
 };
 const PORTAL_NAME: Record<BusinessSpec["industry"], string> = {
   professional: "Client Portal",
   retail: "Online Shop",
   healthcare: "Patient Portal",
   manufacturing: "Supplier Portal",
+  education: "Parent Portal",
+  logistics: "Customer Tracking",
+};
+/** What branch sites are called, per industry. */
+const SITE_NOUN: Record<BusinessSpec["industry"], string> = {
+  professional: "Office", retail: "Store", healthcare: "Clinic", manufacturing: "Office", education: "Campus", logistics: "Depot",
 };
 
 const FIRMWARE: Partial<Record<NodeKind, { vendor: string; version: string }>> = {
@@ -331,7 +353,7 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
     const file = d.node(zs, "file-01", { kind: "server", label: "File Server", ip: d.ip(1, 20), vlan: 20, os: serverOs(), services: ["smb"] });
     const db = d.node(zs, "db-01", {
       kind: "database", label: LOB_NAME[ind][0], ip: d.ip(1, 20), vlan: 20, os: serverOs(), services: ["sql"],
-      tags: ["critical", ind === "healthcare" ? "patient-data" : "client-data"],
+      tags: ["critical", ind === "healthcare" ? "patient-data" : ind === "education" ? "student-data" : "client-data"],
     });
     servers.push({ id: dc, peak: 20 }, { id: file, peak: spec.employees * 1.0 }, { id: db, peak: spec.employees * 0.5 });
   }
@@ -401,6 +423,26 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
     });
     uplink(core, osw, d.zonePeak(zf));
   }
+  if (ind === "education") {
+    // Pupils' own devices on their own Wi-Fi: filtered internet only (the guest rules), never the admin network.
+    const pupils = Math.round(hq.staff * 3);
+    const zst = d.zone("hq-students", "Student Wi-Fi", "guest", "hq");
+    const { ap, cap } = accessPoints(c, zst, "hq-students", "Student", hq, core, pupils);
+    const ids = addSet(c, zst, {
+      key: "hq-pupils", single: "Student Device", plural: "Student devices", kind: "laptop", count: pupils, vlan: 95,
+      site: 1, uplink: ap, medium: "wifi", sharedMbps: cap, tags: ["guest", "students"], alwaysGroup: true,
+    });
+    // Pupils only browse, so size their share of the internet for that, not an office worker's mix.
+    for (const id of ids) d.peak.set(id, pupils * 0.8);
+    guestPeak = pupils * 0.8 * 0.6;
+  }
+  if (ind === "logistics") {
+    const zw = d.zone("hq-warehouse", multiSite ? "HQ Warehouse" : "Warehouse Floor", "factory", "hq");
+    const wsw = d.node(zw, "sw-warehouse", { kind: "switch", label: "Warehouse Switch", ip: d.ip(1, 10), vlan: 10 });
+    const operatives = warehouse(c, zw, hq, wsw, "");
+    uplink(core, wsw, d.zonePeak(zw));
+    officeStaff = Math.max(4, officeStaff - operatives);
+  }
   if (ind === "retail" && !multiSite) {
     // A single-site retailer is the shop itself, with a small back office.
     const zshop = d.zone("hq-shop", "Shop Floor", "branch", "hq");
@@ -425,7 +467,7 @@ export function generateBusiness(input: BusinessSpec): TopologyInput {
   // ── Branch sites ───────────────────────────────────────────────────────────
   const branches: { router: string; tunnelPeak: number; bb: string }[] = [];
   for (const s of sites.slice(1)) {
-    const label = ind === "retail" ? `${s.city} Store` : ind === "healthcare" ? `${s.city} Clinic` : `${s.city} Office`;
+    const label = `${s.city} ${SITE_NOUN[ind]}`;
     const zb = d.zone(s.key, label, "branch", s.key);
     const router = d.node(zb, `${s.key}-router`, {
       // Branch routers forward DNS locally, so internet services survive a head-office outage.
@@ -539,8 +581,9 @@ function defaultRules(spec: BusinessSpec, nodes: NodeIn[], zones: TopologyInput[
     add("clinical-branch", "Branches → clinical blocked", "kind:branch", "kind:clinical", ["any"], "deny");
   }
   if (comp.has("iso27001") && hasZone("factory")) {
-    add("ot-office", "Office → factory floor blocked", "kind:office", "kind:factory", ["any"], "deny");
-    add("ot-branch", "Branches → factory floor blocked", "kind:branch", "kind:factory", ["any"], "deny");
+    const floor = spec.industry === "logistics" ? "warehouse floor" : "factory floor";
+    add("ot-office", `Office → ${floor} blocked`, "kind:office", "kind:factory", ["any"], "deny");
+    add("ot-branch", `Branches → ${floor} blocked`, "kind:branch", "kind:factory", ["any"], "deny");
   }
   return rules;
 }
@@ -606,8 +649,11 @@ function officeZone(
 }
 
 /** A branch office or clinic (non-retail). Devices hang off the branch router. */
-function branchOffice(c: Ctx, z: ZoneDraft, s: Site, router: string): void {
+function branchOffice(c: Ctx, z: ZoneDraft, site: Site, router: string): void {
   const depts = DEPTS[c.spec.industry];
+  // A depot is part warehouse: its operatives carry scanners rather than sitting at desks.
+  const operatives = c.spec.industry === "logistics" ? warehouse(c, z, site, router, `${site.city} `) : 0;
+  const s: Site = { ...site, staff: Math.max(1, site.staff - operatives) };
   const laptops = depts.filter((x) => x.kind === "laptop").reduce((t, x) => t + Math.round(s.staff * x.share), 0);
   const mobiles = Math.round(s.staff * 0.7);
   const health = c.spec.industry === "healthcare";
@@ -649,6 +695,25 @@ function branchOffice(c: Ctx, z: ZoneDraft, s: Site, router: string): void {
     key: `${s.key}-cam`, single: `${s.city} Camera`, plural: `${s.city} cameras`, kind: "camera",
     count: 1 + Math.floor(s.staff / 40), vlan: 60, site: s.n, uplink: router, medium: "copper",
   });
+}
+
+/** A warehouse floor: handheld scanners on Wi-Fi, label printers and dock cameras. Returns the operatives. */
+function warehouse(c: Ctx, z: ZoneDraft, s: Site, uplinkId: string, where: string): number {
+  const scanners = Math.max(4, Math.round(s.staff * 0.4));
+  const { ap, cap } = accessPoints(c, z, `${s.key}-warehouse`, `${where}Warehouse`, s, uplinkId, scanners);
+  addSet(c, z, {
+    key: `${s.key}-scanners`, single: `${where}Handheld Scanner`, plural: `${where}handheld scanners`, kind: "phone",
+    count: scanners, vlan: 45, site: s.n, uplink: ap, medium: "wifi", sharedMbps: cap, tags: ["scanner"], alwaysGroup: true,
+  });
+  addSet(c, z, {
+    key: `${s.key}-label-printer`, single: `${where}Label Printer`, plural: `${where}label printers`, kind: "printer",
+    count: Math.max(2, Math.round(s.staff / 25)), vlan: 45, site: s.n, uplink: uplinkId, medium: "copper", services: ["print"],
+  });
+  addSet(c, z, {
+    key: `${s.key}-dock-cam`, single: `${where}Dock Camera`, plural: `${where}dock cameras`, kind: "camera",
+    count: 2 + Math.floor(s.staff / 30), vlan: 60, site: s.n, uplink: uplinkId, medium: "copper",
+  });
+  return scanners;
 }
 
 /** A shop: card terminals (in their own PCI zone when required), back-office PC, guest Wi-Fi, cameras. */

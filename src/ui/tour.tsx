@@ -164,7 +164,7 @@ function TourOffer() {
       role="dialog"
       aria-labelledby="tour-offer-title"
       aria-describedby="tour-offer-body"
-      className="glass absolute top-[84px] left-1/2 z-40 w-[380px] -translate-x-1/2 rounded-[18px] bg-surface/90 p-5"
+      className="glass absolute top-[calc(var(--top,72px)+12px)] left-1/2 z-40 w-[380px] -translate-x-1/2 rounded-[18px] bg-surface/90 p-5"
     >
       <div className="flex items-center gap-3">
         <img src="/emoji/honeypot.png" alt="" className="h-9 w-9" />

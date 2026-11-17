@@ -150,6 +150,21 @@ select:focus-visible {
   }
 }
 
+/* Touch screens (Phase 9): finger-sized targets. 36 px comfortably exceeds WCAG 2.5.8's 24 px. */
+@media (pointer: coarse) {
+  button,
+  select,
+  input:not([type="checkbox"]):not([type="range"]),
+  [role="tab"],
+  [role="switch"] {
+    min-height: 36px;
+  }
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 /* Device artwork comes in any aspect ratio (including custom images): never stretch it. */
 img {
   object-fit: contain;

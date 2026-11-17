@@ -55,6 +55,20 @@ export const INDUSTRY_INFO: Record<
     names: ["Calder Precision Engineering", "Ironbridge Components", "Fenwick Fabrication", "Albion Plastics"],
     compliance: ["gdpr", "iso27001"],
   },
+  education: {
+    label: "Education",
+    blurb: "Schools and colleges. Staff laptops, busy student Wi-Fi and a student records system.",
+    icon: "/emoji/industry-education.png",
+    names: ["Oakfield Academy", "St Aldhelm's College", "Brookmere High School", "Westgate Sixth Form"],
+    compliance: ["gdpr", "cyber-essentials"],
+  },
+  logistics: {
+    label: "Logistics",
+    blurb: "Warehouses and depots. Handheld scanners, a warehouse system and tight dispatch windows.",
+    icon: "/emoji/industry-logistics.png",
+    names: ["Swift Haul Logistics", "Pennine Freight", "Kingsway Distribution", "Harrow & Lane Logistics"],
+    compliance: ["gdpr", "iso27001"],
+  },
 };
 
 export const SIZE_LABELS: Record<BusinessSize, string> = { sme: "Small (SME)", mid: "Mid-size", enterprise: "Enterprise" };

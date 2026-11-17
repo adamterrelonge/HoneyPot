@@ -3,7 +3,8 @@
  * after-action report. Reads snapshots; acts only through commands.
  */
 import { useEffect, type ReactNode } from "react";
-import { SCENARIOS, type Intensity } from "../engine/incidents/catalog";
+import { INDUSTRY_INFO } from "../engine/gen/spec";
+import { scenariosFor, type Intensity } from "../engine/incidents/catalog";
 import type { GameView, IncidentView } from "../engine/incidents/engine";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
@@ -108,7 +109,7 @@ export function PlaySheet() {
       </div>
       <H>Scenarios</H>
       <div className="grid gap-3 sm:grid-cols-2">
-        {SCENARIOS.map((s) => (
+        {scenariosFor(topology.meta.profile?.industry).map((s) => (
           <article key={s.id} className={`${card} flex flex-col`}>
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="text-[14px] font-semibold">{s.name}</h3>
@@ -116,6 +117,11 @@ export function PlaySheet() {
                 {s.difficulty} · {s.durationHours} h
               </span>
             </div>
+            {s.industries && (
+              <span className="mt-1 self-start rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-semibold text-accent-ink">
+                Written for {s.industries.map((i) => INDUSTRY_INFO[i].label.toLowerCase()).join(" / ")}
+              </span>
+            )}
             <p className="mt-1 flex-1 text-[12px] leading-snug text-ink-2">{s.description}</p>
             <ul className="mt-2 text-[11px] text-ink-3">
               {s.objectives.map((o) => (
@@ -192,7 +198,7 @@ export function IncidentsPanel({ width }: { width: number }) {
   const done = g.incidents.filter((i) => i.status === "resolved" || i.status === "blocked");
   return (
     <aside
-      className="glass absolute top-[72px] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px]"
+      className="glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px]"
       style={{ width }}
       aria-label="Incidents"
     >

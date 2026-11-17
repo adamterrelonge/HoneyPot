@@ -26,7 +26,7 @@ export type LinkMedium = (typeof LINK_MEDIA)[number];
 
 export const BUSINESS_SIZES = ["sme", "mid", "enterprise"] as const;
 export type BusinessSize = (typeof BUSINESS_SIZES)[number];
-export const INDUSTRIES = ["professional", "retail", "healthcare", "manufacturing"] as const;
+export const INDUSTRIES = ["professional", "retail", "healthcare", "manufacturing", "education", "logistics"] as const;
 export type Industry = (typeof INDUSTRIES)[number];
 export const BUDGETS = ["lean", "standard", "generous"] as const;
 export type Budget = (typeof BUDGETS)[number];

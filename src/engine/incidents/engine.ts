@@ -19,7 +19,7 @@ import { APP_INFO } from "../sim/demands";
 import { deriveSeed, noise } from "../sim/rng";
 import type { AppHealth, Demand, FlowState } from "../sim/types";
 import {
-  ACTIONS, BUDGET_PER_EMPLOYEE, COST_PER_USER_MINUTE, FREE_PLAY_RATE, INCIDENT_INFO, INCIDENT_KINDS, RESTORE, SCENARIOS,
+  ACTIONS, BUDGET_PER_EMPLOYEE, COST_PER_USER_MINUTE, FREE_PLAY_RATE, INCIDENT_INFO, INCIDENT_KINDS, RESTORE, SCENARIOS, scenariosFor,
   type IncidentKind, type Intensity, type Objective, type Scenario,
 } from "./catalog";
 
@@ -29,6 +29,12 @@ const PERSON = new Set<NodeKind>(["desktop", "laptop", "phone"]);
 const TARGETS = new Set<NodeKind>(["server", "database", "nas", "desktop", "laptop", "honeypot", "camera"]);
 const ENCRYPTABLE = new Set<NodeKind>(["server", "database", "nas", "desktop", "laptop"]);
 const EDGE = new Set<NodeKind>(["firewall", "vpn", "server", "router"]);
+/** Operational technology: production controllers and clinical devices (OT ransomware's targets). */
+const OT = new Set<NodeKind>(["plc", "medical"]);
+/** Incidents driven by an adversary (they stop when a game ends; faults run their course). */
+const ATTACKS = new Set<IncidentKind>(["ransomware", "phishing", "edge-exploit", "insider", "supply-chain", "credential-stuffing", "ot-ransomware", "invoice-fraud"]);
+/** The service an attacker uses to reach a target (OT devices speak their own protocols). */
+const reachService = (n: NetNode) => (n.kind === "plc" ? "production" : n.kind === "medical" ? "imaging" : "files");
 
 /** What the incident engine needs to know about the world (implemented by Simulation). */
 export interface World {
@@ -92,6 +98,15 @@ interface Incident {
   exfilMbps: number;
   dataMB: number;
   cost: number;
+  /** Supply chain: footholds planted by the backdoored update (a password reset doesn't remove them). */
+  planted?: string[];
+  /** Footholds held with a stolen login (a password reset always removes them). */
+  stolenLogin?: string[];
+  /** Credential stuffing: when a reused password would start working. */
+  breachTick?: number;
+  /** Invoice fraud: the amount at stake, and whether the finance mailbox itself was taken over. */
+  fraudAmount?: number;
+  mailboxTakeover?: boolean;
 }
 
 /** Everything the incident engine changes over time, as plain data (saves, Phase 7). */
@@ -194,6 +209,11 @@ export class IncidentEngine {
     return this.mode !== "sandbox" && !this.finished;
   }
 
+  /** A game was played and has finished: its results are final. */
+  private get gameOver(): boolean {
+    return this.mode !== "sandbox" && this.finished;
+  }
+
   // ── Effects the simulation asks about ─────────────────────────────────────
 
   isDormantDecoy(id: string): boolean {
@@ -237,6 +257,7 @@ export class IncidentEngine {
     const internet = this.topology.nodes.find((n) => n.kind === "internet");
     for (const inc of this.incidents) {
       if (inc.resolvedTick !== undefined || inc.failed) continue;
+      if (this.gameOver && ATTACKS.has(inc.kind)) continue; // the exercise has ended
       if (inc.kind === "ddos" && inc.target && internet && !inc.done.includes("scrub")) {
         out.push({ mbps: 0, demand: { ...base, id: `ddos:${inc.id}`, app: "ddos", client: internet.id, server: inc.target, bulk: "toServer", baseMbps: 0 } });
       }
@@ -256,6 +277,8 @@ export class IncidentEngine {
     if (inc.kind === "insider") return inc.target ? [inc.target] : [];
     const live = inc.footholds.filter((f) => !inc.encrypted.includes(f));
     const servers = live.filter((f) => ["server", "database", "nas"].includes(this.nodes.get(f)!.kind));
+    // A backdoor uses one quiet channel; other attackers pull from every server they hold.
+    if (inc.kind === "supply-chain") return (servers.length ? servers : live).slice(0, 1);
     return servers.length ? servers : live.slice(0, 1);
   }
 
@@ -266,6 +289,9 @@ export class IncidentEngine {
       case "game.start": {
         const scenario = cmd.mode === "scenario" ? SCENARIOS.find((s) => s.id === cmd.scenarioId) : null;
         if (cmd.mode === "scenario" && !scenario) return { ok: false, error: `Unknown scenario "${cmd.scenarioId}"` };
+        if (scenario && !scenariosFor(this.topology.meta.profile?.industry).includes(scenario)) {
+          return { ok: false, error: `"${scenario.name}" is written for ${scenario.industries!.join(" or ")} businesses` };
+        }
         this.mode = cmd.mode;
         this.intensity = cmd.intensity ?? "normal";
         this.scenario = scenario ?? null;
@@ -341,6 +367,8 @@ export class IncidentEngine {
   private restorePlan(node: string, w: Pick<World, "usable">): { label: string; minutes: number; cost: number } {
     const n = this.nodes.get(node)!;
     if (n.kind === "desktop" || n.kind === "laptop") return RESTORE.reimage;
+    if (n.kind === "plc") return RESTORE.controller;
+    if (n.kind === "medical") return RESTORE.clinical;
     const nas = this.topology.nodes.find((x) => x.kind === "nas" && x.services.includes("backup"));
     const offsite = this.topology.nodes.find((x) => x.kind === "cloud" && x.services.includes("backup"));
     if (nas && nas.id !== node && w.usable(nas.id) && !this.encryptedReason(nas.id)) return RESTORE.local;
@@ -381,7 +409,12 @@ export class IncidentEngine {
     const byId = (x?: string) => (x ? nodes.find((n) => n.id === x) : undefined);
 
     switch (kind) {
-      case "ransomware": {
+      case "ransomware":
+      case "ot-ransomware": {
+        if (kind === "ot-ransomware" && !nodes.some((n) => OT.has(n.kind))) {
+          fail("There are no production controllers or clinical devices here to hold to ransom");
+          break;
+        }
         const cams = nodes.filter((n) => n.kind === "camera" && n.tags.includes("default-credentials"));
         const routes: [string, NetNode[]][] = [
           ["a camera still on its default password", cams],
@@ -397,8 +430,57 @@ export class IncidentEngine {
         const entry = pick(route[1], 2, (n) => n.count)!;
         inc.footholds.push(entry.id);
         inc.payload = "ransomware";
-        inc.maxMoves = 3 + Math.floor(r(3) * 3);
+        inc.maxMoves = (kind === "ot-ransomware" ? 5 : 3) + Math.floor(r(3) * 3);
         this.note(inc, w.tick, `Initial access via ${route[0]}: ${entry.label}`);
+        break;
+      }
+      case "supply-chain": {
+        // The vendor's management agent runs on servers and some desktops; the update lands on all at once.
+        const hosts = nodes.filter((n) => (n.kind === "server" || n.kind === "database") && n.count === 1 && !n.tags.includes("internet-facing"));
+        const desks = nodes.filter((n) => (n.kind === "desktop" || n.kind === "laptop") && !n.tags.includes("guest"));
+        const order = (xs: NetNode[], k: number) => [...xs].sort((a, b) => noise(deriveSeed(this.seed, id + a.id), k) - noise(deriveSeed(this.seed, id + b.id), k));
+        const planted = [...order(hosts, 1).slice(0, 2), ...order(desks, 2).slice(0, 1)];
+        if (!planted.length) {
+          fail("The backdoored update didn't reach any of your machines");
+          break;
+        }
+        inc.footholds.push(...planted.map((n) => n.id));
+        inc.planted = planted.map((n) => n.id);
+        inc.payload = "theft";
+        inc.maxMoves = 3;
+        inc.detectAfter = w.tick + 8 * TICKS_PER_HOUR;
+        this.note(inc, w.tick, `A trusted vendor's backdoored update installed on ${planted.map((n) => n.label).join(", ")}`);
+        break;
+      }
+      case "credential-stuffing": {
+        const gw = byId(target) ?? nodes.find((n) => n.kind === "vpn");
+        if (!gw) {
+          fail("Attackers had leaked passwords but nothing to try them on: no VPN is exposed");
+          break;
+        }
+        inc.target = gw.id;
+        inc.breachTick = w.tick + Math.round((30 + r(1) * 45) / MINUTES_PER_TICK);
+        inc.nextMoveTick = inc.breachTick + MOVE_TICKS;
+        inc.payload = "theft";
+        inc.maxMoves = 3;
+        inc.detectAfter = w.tick + Math.round(15 / MINUTES_PER_TICK);
+        this.note(inc, w.tick, `Thousands of sign-in attempts with leaked passwords started hitting ${gw.label}`);
+        break;
+      }
+      case "invoice-fraud": {
+        const people = nodes.filter((n) => PERSON.has(n.kind) && !n.tags.includes("guest"));
+        const finance = byId(target) ?? people.find((n) => w.roleOf(n.id) === "manager") ?? people[0];
+        if (!finance) {
+          fail("Nobody to send a fake invoice to");
+          break;
+        }
+        inc.target = finance.id;
+        inc.fraudAmount = Math.round((5000 + this.topology.meta.employees * 150) / 100) * 100;
+        inc.mailboxTakeover = !w.mfa(w.roleOf(finance.id) ?? "manager");
+        inc.endTick = w.tick + Math.round((90 + r(1) * 60) / MINUTES_PER_TICK);
+        inc.detectAfter = w.tick + Math.round(20 / MINUTES_PER_TICK);
+        this.note(inc, w.tick, `${finance.label} got an urgent request to pay £${inc.fraudAmount.toLocaleString("en-GB")} to a supplier's "new" bank account`);
+        if (inc.mailboxTakeover) this.note(inc, w.tick, "It came from inside: the finance mailbox was taken over (no MFA), so replies go to the attacker");
         break;
       }
       case "phishing": {
@@ -558,8 +640,18 @@ export class IncidentEngine {
           events.push({ severity: "ok", subject: node, text: `${this.label(node)} restored and back in service` });
         } else if (key === "reset-credentials") {
           const before = inc.footholds.length;
-          inc.footholds = inc.footholds.filter((f) => inc.encrypted.includes(f) || w.exposed(f).some((a) => a.exploited));
+          const planted = inc.planted ?? [];
+          const stolen = inc.stolenLogin ?? [];
+          inc.footholds = inc.footholds.filter(
+            (f) => inc.encrypted.includes(f) || planted.includes(f) || (!stolen.includes(f) && w.exposed(f).some((a) => a.exploited)),
+          );
+          if (inc.kind === "invoice-fraud") inc.mailboxTakeover = false;
           this.note(inc, tick, `Credentials reset: the attacker lost ${before - inc.footholds.length} foothold(s)`);
+        } else if (key === "remove-backdoor") {
+          const before = inc.footholds.length;
+          inc.footholds = inc.footholds.filter((f) => inc.encrypted.includes(f));
+          inc.planted = [];
+          this.note(inc, tick, `Backdoored update removed and its server blocked: the attacker lost ${before - inc.footholds.length} foothold(s)`);
         } else if (key === "escalate" && inc.endTick !== undefined) {
           inc.endTick = tick + Math.round((inc.endTick - tick) * 0.6);
           this.note(inc, tick, "ISP escalation accepted: repair brought forward");
@@ -568,12 +660,41 @@ export class IncidentEngine {
         }
       }
 
+      // Once a game is over its report is final: attackers stop (no moves, theft or payouts) while
+      // timed faults still run out and restores already under way still finish.
+      if (this.gameOver && ATTACKS.has(inc.kind)) continue;
+
       if (inc.detectAfter !== undefined && tick >= inc.detectAfter) detect(DETECTION_TEXT[inc.kind]);
 
       switch (inc.kind) {
         case "ransomware":
         case "phishing":
-        case "edge-exploit": {
+        case "edge-exploit":
+        case "supply-chain":
+        case "ot-ransomware":
+        case "credential-stuffing": {
+          if (inc.kind === "credential-stuffing" && !inc.footholds.length) {
+            if (inc.done.includes("block-ips")) {
+              this.note(inc, tick, "Attacking IP ranges blocked before any password worked");
+              this.resolve(inc, tick, events);
+              break;
+            }
+            if (tick < inc.breachTick!) break;
+            const gw = inc.target!;
+            const victim = this.topology.nodes.find((n) => {
+              const role = w.roleOf(n.id);
+              return PERSON.has(n.kind) && !n.tags.includes("guest") && w.usable(n.id) && role !== undefined && !w.mfa(role);
+            });
+            if (!victim || !w.usable(gw) || w.accessBlocked(gw)) {
+              this.note(inc, tick, victim ? "The VPN was offline, so no stolen password could be used" : "Every reused password was rejected: MFA is on for everyone");
+              this.resolve(inc, tick, events);
+              break;
+            }
+            inc.footholds.push(gw);
+            inc.stolenLogin = [gw];
+            this.note(inc, tick, `A reused password worked: the attacker signed in to the VPN as one of ${victim.label}`);
+            break;
+          }
           const sources = inc.footholds.filter((f) => !inc.encrypted.includes(f) && w.usable(f) && !w.accessBlocked(f));
           if (inc.containedTick === undefined && inc.footholds.length && !sources.length) {
             inc.containedTick = tick;
@@ -583,14 +704,36 @@ export class IncidentEngine {
           }
           if (inc.containedTick === undefined && inc.impactTick === undefined && tick >= inc.nextMoveTick) {
             inc.nextMoveTick = tick + MOVE_TICKS;
-            if (inc.moves < inc.maxMoves) this.move(inc, sources, w, detect);
+            // OT crews hold off encrypting until they reach the production systems (up to 6 extra tries).
+            const waitForOt = inc.kind === "ot-ransomware" && !inc.footholds.some((f) => OT.has(this.nodes.get(f)!.kind)) && inc.moves < inc.maxMoves + 6;
+            if (inc.moves < inc.maxMoves || waitForOt) this.move(inc, sources, w, detect);
             else this.impact(inc, sources, w, detect);
           }
-          if (inc.impactTick !== undefined && inc.payload === "theft" && inc.containedTick === undefined) inc.exfilMbps = 30;
+          if (inc.impactTick !== undefined && inc.payload === "theft" && inc.containedTick === undefined) inc.exfilMbps = inc.kind === "supply-chain" ? 2 : 30; // backdoors leak low and slow
           if (inc.dataMB > 2000) detect("unusual volume of data leaving the network");
           if (inc.containedTick !== undefined && inc.encrypted.length === 0 && Object.keys(inc.pending).length === 0) {
             this.resolve(inc, tick, events);
           }
+          break;
+        }
+        case "invoice-fraud": {
+          const verified = inc.done.includes("verify-payment");
+          if (inc.impactTick === undefined && !verified && tick >= inc.endTick!) {
+            inc.impactTick = tick;
+            if (this.playing) {
+              this.lost += inc.fraudAmount!;
+              inc.cost += inc.fraudAmount!;
+            }
+            this.note(inc, tick, `£${inc.fraudAmount!.toLocaleString("en-GB")} paid into the fraudsters' account`);
+            detect("the real supplier says they were never paid");
+            events.push({ severity: "bad", subject: inc.target, text: `🧾 Invoice fraud: £${inc.fraudAmount!.toLocaleString("en-GB")} lost` });
+          }
+          if (verified && inc.impactTick === undefined && !inc.done.includes("verify-payment:noted")) {
+            inc.done.push("verify-payment:noted");
+            this.note(inc, tick, "The supplier confirmed their bank details never changed: payment stopped");
+          }
+          const settled = verified || inc.impactTick !== undefined;
+          if (settled && !inc.mailboxTakeover) this.resolve(inc, tick, events);
           break;
         }
         case "insider":
@@ -630,21 +773,22 @@ export class IncidentEngine {
   private move(inc: Incident, sources: string[], w: World, detect: (why: string) => void): void {
     const r = (k: number) => noise(deriveSeed(this.seed, inc.id), w.tick * 7 + k);
     inc.moves++;
+    const ot = inc.kind === "ot-ransomware";
     const candidates = this.topology.nodes.filter(
       (n) =>
-        TARGETS.has(n.kind) && !inc.footholds.includes(n.id) && w.usable(n.id) && !this.isDormantDecoy(n.id) &&
-        sources.some((s) => w.canReach(s, n.id, "files")),
+        (TARGETS.has(n.kind) || (ot && OT.has(n.kind))) && !inc.footholds.includes(n.id) && w.usable(n.id) && !this.isDormantDecoy(n.id) &&
+        sources.some((s) => w.canReach(s, n.id, reachService(n))),
     );
     if (!candidates.length) {
       this.note(inc, w.tick, "The attacker probed the network but found nothing reachable");
       return;
     }
     const weight = (n: NetNode) =>
-      n.kind === "honeypot" ? 4 : ["server", "database", "nas"].includes(n.kind) ? 3 : n.kind === "camera" ? 0.3 : 1;
+      ot && OT.has(n.kind) ? 20 : n.kind === "honeypot" ? 4 : ["server", "database", "nas"].includes(n.kind) ? 3 : n.kind === "camera" ? 0.3 : 1;
     const total = candidates.reduce((s, n) => s + weight(n), 0);
     let roll = r(11) * total;
     const target = candidates.find((n) => (roll -= weight(n)) < 0) ?? candidates[candidates.length - 1]!;
-    const from = sources.find((s) => w.canReach(s, target.id, "files"))!;
+    const from = sources.find((s) => w.canReach(s, target.id, reachService(target)))!;
     if (target.kind === "honeypot") {
       this.note(inc, w.tick, `The attacker on ${this.label(from)} touched decoy ${target.label}`);
       detect(`decoy ${target.label} was accessed from ${this.label(from)}`);
@@ -662,7 +806,8 @@ export class IncidentEngine {
   private impact(inc: Incident, sources: string[], w: World, detect: (why: string) => void): void {
     inc.impactTick = w.tick;
     if (inc.payload === "ransomware") {
-      inc.encrypted = sources.filter((f) => ENCRYPTABLE.has(this.nodes.get(f)!.kind));
+      const kindOf = (f: string) => this.nodes.get(f)!.kind;
+      inc.encrypted = sources.filter((f) => ENCRYPTABLE.has(kindOf(f)) || (inc.kind === "ot-ransomware" && OT.has(kindOf(f))));
       if (!inc.encrypted.length) {
         this.note(inc, w.tick, "The attacker found nothing worth encrypting and switched to stealing data");
         inc.payload = "theft";
@@ -706,6 +851,10 @@ export class IncidentEngine {
       "backup-saturation": has("backup") && working ? 0.6 : 0,
       "failed-update": 1,
       insider: 0.5,
+      "supply-chain": 0.3,
+      "credential-stuffing": nodes.some((n) => n.kind === "vpn") ? (noMfa ? 2 : 0.5) : 0,
+      "ot-ransomware": nodes.some((n) => OT.has(n.kind)) ? 1 + (weakCams ? 1 : 0) : 0,
+      "invoice-fraud": 0.8,
     };
     const total = INCIDENT_KINDS.reduce((s, k) => s + weights[k], 0);
     let roll = noise(this.seed ^ 0xbeef, w.tick) * total;
@@ -892,6 +1041,10 @@ const DETECTION_TEXT: Record<IncidentKind, string> = {
   "backup-saturation": "the internet link is saturated by backup traffic",
   "failed-update": "a device rebooted unexpectedly after an automatic update",
   insider: "unusual volume of data copied from file shares",
+  "supply-chain": "a server keeps calling out to a domain nobody recognises",
+  "credential-stuffing": "thousands of failed VPN sign-ins in a few minutes",
+  "ot-ransomware": "suspicious encryption activity spreading from the office",
+  "invoice-fraud": "Finance asked IT whether a supplier's change of bank details is genuine",
 };
 
 const at = (tick: number | undefined) => (tick === undefined ? undefined : minuteOfTick(tick));

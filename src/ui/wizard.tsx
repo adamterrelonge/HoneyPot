@@ -20,6 +20,8 @@ const BRANCH_NOUN: Record<Industry, [string, string]> = {
   retail: ["store", "stores"],
   healthcare: ["clinic", "clinics"],
   manufacturing: ["branch office", "branch offices"],
+  education: ["campus", "campuses"],
+  logistics: ["depot", "depots"],
 };
 
 export function Wizard() {
@@ -135,7 +137,7 @@ export function Wizard() {
           </Field>
 
           <Field label="Industry">
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
               {INDUSTRIES.map((id) => {
                 const info = INDUSTRY_INFO[id];
                 const on = spec.industry === id;
@@ -150,7 +152,14 @@ export function Wizard() {
                         : "bg-surface/60 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.1)] hover:bg-surface"
                     }`}
                   >
-                    <img src={info.icon} alt="" className="h-9 w-9" />
+                    <img
+                      src={info.icon}
+                      alt=""
+                      className="h-9 w-9"
+                      onError={(e) => {
+                        if (!e.currentTarget.src.endsWith("/emoji/hq.png")) e.currentTarget.src = "/emoji/hq.png";
+                      }}
+                    />
                     <span className="mt-2 text-[13px] font-semibold leading-tight">{info.label}</span>
                     <span className="mt-1 text-[11px] leading-snug text-ink-3">{info.blurb}</span>
                   </button>

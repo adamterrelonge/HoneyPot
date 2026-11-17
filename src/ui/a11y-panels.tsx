@@ -33,7 +33,7 @@ export function ThemeToggle() {
       <span aria-hidden="true" className="text-[14px] leading-none">
         {THEME_ICON[theme]}
       </span>
-      <span className="hidden 2xl:inline">{THEME_LABEL[theme]}</span>
+      <span className="hidden min-[1700px]:inline">{THEME_LABEL[theme]}</span>
     </button>
   );
 }
@@ -46,16 +46,16 @@ export function SkipLinks() {
     "sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-[60] focus:rounded-[10px] focus:bg-surface focus:px-3 focus:py-2 focus:text-[13px] focus:font-semibold focus:text-accent-ink focus:shadow-lg";
   return (
     <>
-      <a
-        href="#device-search"
+      {/* A button: on tablets the device list is a drawer that has to be opened first. */}
+      <button
         className={cls}
-        onClick={(e) => {
-          e.preventDefault();
-          document.getElementById("device-search")?.focus();
+        onClick={() => {
+          useApp.getState().setDevicesOpen(true);
+          requestAnimationFrame(() => document.getElementById("device-search")?.focus());
         }}
       >
         Skip to device list
-      </a>
+      </button>
       {/* A button, not a link: the table only exists once opened. */}
       <button className={cls} onClick={() => setTable(true)}>
         Open the table view of the network
@@ -113,7 +113,7 @@ export function TableView({ left, right }: { left: number; right: number }) {
       ref={ref}
       id="table-view"
       aria-labelledby="table-title"
-      className="glass absolute top-[72px] bottom-3 z-30 flex flex-col overflow-hidden rounded-[20px] bg-surface/90"
+      className="glass absolute top-[var(--top,72px)] bottom-3 z-30 flex flex-col overflow-hidden rounded-[20px] bg-surface/90"
       style={{ left, right }}
     >
       <header className="flex items-center gap-3 px-4 pt-3 pb-2">

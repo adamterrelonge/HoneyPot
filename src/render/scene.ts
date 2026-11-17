@@ -785,6 +785,55 @@ export class NetworkScene {
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     this.disposers.push(() => canvas.removeEventListener("wheel", onWheel));
+
+    // Touch (Phase 9, tablets): one finger pans (the drag above); two fingers pinch-zoom around
+    // their midpoint and pan as it moves. We handle gestures ourselves, so the browser mustn't.
+    canvas.style.touchAction = "none";
+    const touches = new Map<number, Pt>();
+    let pinch: { dist: number; scale: number; mid: Pt } | null = null;
+    const local = (e: PointerEvent): Pt => {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const pair = () => {
+      const [a, b] = [...touches.values()] as [Pt, Pt];
+      return { dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    };
+    const onTouchDown = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      touches.set(e.pointerId, local(e));
+      if (touches.size === 2) {
+        const p = pair();
+        pinch = { dist: p.dist, scale: this.target.s, mid: p.mid };
+        this.drag = null; // the second finger turns a drag into a pinch
+        this.dragMoved = true; // and stops the gesture counting as a tap
+      }
+    };
+    const onTouchMove = (e: PointerEvent) => {
+      if (!touches.has(e.pointerId)) return;
+      touches.set(e.pointerId, local(e));
+      if (!pinch || touches.size < 2) return;
+      const p = pair();
+      this.userMoved = true;
+      this.target.x = this.cam.x = this.target.x + (p.mid.x - pinch.mid.x);
+      this.target.y = this.cam.y = this.target.y + (p.mid.y - pinch.mid.y);
+      pinch.mid = p.mid;
+      this.zoomAt(p.mid.x, p.mid.y, (pinch.scale * p.dist) / pinch.dist, true);
+    };
+    const onTouchUp = (e: PointerEvent) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+    };
+    canvas.addEventListener("pointerdown", onTouchDown);
+    canvas.addEventListener("pointermove", onTouchMove);
+    canvas.addEventListener("pointerup", onTouchUp);
+    canvas.addEventListener("pointercancel", onTouchUp);
+    this.disposers.push(() => {
+      canvas.removeEventListener("pointerdown", onTouchDown);
+      canvas.removeEventListener("pointermove", onTouchMove);
+      canvas.removeEventListener("pointerup", onTouchUp);
+      canvas.removeEventListener("pointercancel", onTouchUp);
+    });
   }
 
   private zoomAt(px: number, py: number, scale: number, instant: boolean): void {

@@ -26,6 +26,7 @@ export const APP_INFO: Record<AppId, { label: string; category: AppCategory; ico
   payments: { label: "Card payments", category: "external", icon: "💳" },
   production: { label: "Production line control", category: "system", icon: "⚙️" },
   imaging: { label: "Medical imaging", category: "work", icon: "🩻" },
+  warehouse: { label: "Warehouse scanning", category: "work", icon: "📦" },
   ddos: { label: "Attack traffic (DDoS)", category: "threat", icon: "🌊" },
   exfil: { label: "Data leaving the network", category: "threat", icon: "📤" },
 };
@@ -78,6 +79,18 @@ export function deriveDemands(t: Topology): Demand[] {
     out.push({ id: `${d.app}:${d.client}>${d.server}`, latencyBudgetMs: 250, lossBudget: 0.02, users: 1, ...d });
 
   for (const n of t.nodes) {
+    // Warehouse handheld scanners only talk to the warehouse system (WMS), all shift long.
+    if (n.tags.includes("scanner")) {
+      const wms = hostNear(t, ["sql"], n);
+      if (wms) {
+        add({
+          app: "warehouse", client: n.id, server: wms.id, bulk: "both", baseMbps: 0.1 * n.count, users: n.count,
+          schedule: { kind: "work" }, needs: WORK_NEEDS, latencyBudgetMs: 300,
+        });
+      }
+      continue;
+    }
+
     // Staff and guest devices.
     const mix = CLIENT_MIX[n.kind];
     if (mix) {
@@ -198,7 +211,7 @@ export function deriveDemands(t: Topology): Demand[] {
 
 /** What an app needs before it works (mirrors the demands above; used by the trace tool). */
 export function needsFor(app: string): Need[] {
-  if (app === "email-docs" || app === "files" || app === "practice-db" || app === "remote") return WORK_NEEDS;
+  if (app === "email-docs" || app === "files" || app === "practice-db" || app === "remote" || app === "warehouse") return WORK_NEEDS;
   if (app === "web" || app === "print" || app === "payments" || app === "backup-offsite") return ["dns"];
   return [];
 }

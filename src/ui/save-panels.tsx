@@ -70,7 +70,7 @@ export function NoticeToast() {
   }, [notice]);
   if (!notice) return null;
   return (
-    <div role="status" className="glass absolute top-[72px] left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-ink">
+    <div role="status" className="glass absolute top-[var(--top,72px)] left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-ink">
       ✓ {notice}
     </div>
   );

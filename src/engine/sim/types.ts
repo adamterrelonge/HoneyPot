@@ -13,6 +13,8 @@ export const APP_IDS = [
   "email-docs", "files", "practice-db", "web", "print",
   "portal", "remote", "voice", "cctv", "backup-local", "backup-offsite",
   "payments", "production", "imaging",
+  // Phase 9: warehouse handheld scanners talking to the WMS.
+  "warehouse",
   // Phase 6: attacker traffic injected by incidents (never shown as business services).
   "ddos", "exfil",
 ] as const;

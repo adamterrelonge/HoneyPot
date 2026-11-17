@@ -17,6 +17,8 @@ export const FLOW_STATUS: Record<FlowStatus, { label: string; dot: string; pill:
   idle: { label: "Idle", dot: "bg-fill/15", pill: "bg-fill/[0.05] text-ink-3" },
 };
 
+/** Touch-first device (tablet): hints say tap and pinch rather than click and scroll. */
+const TOUCH = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 const SEVERITY_DOT: Record<Severity, string> = { info: "bg-accent", ok: "bg-ok", warn: "bg-warn", bad: "bg-bad" };
 
 export function formatRate(mbps: number): string {
@@ -113,7 +115,7 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
       inert={!open}
       data-tour="services"
       aria-label="Business services"
-      className={`glass absolute top-[72px] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
+      className={`glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
       style={{ width }}
@@ -210,7 +212,7 @@ export function ActivityFeed({ left, right }: { left: number; right: number }) {
         <ol className={`px-1.5 pb-1.5 ${expanded ? "max-h-[260px] overflow-y-auto" : ""}`}>
           {shown.length === 0 && (
             <li className="px-2 py-1.5 text-[12px] text-ink-3">
-              Drag to pan · Scroll or pinch to zoom · Click a device to inspect and act on it
+              {TOUCH ? "Drag to pan · Pinch to zoom · Tap a device to inspect and act on it" : "Drag to pan · Scroll or pinch to zoom · Click a device to inspect and act on it"}
             </li>
           )}
           {shown.map((e) => {
@@ -251,7 +253,7 @@ export function ErrorToast() {
   return (
     <div
       role="alert"
-      className="glass absolute top-[72px] left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-bad-ink"
+      className="glass absolute top-[var(--top,72px)] left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-bad-ink"
     >
       {error}
     </div>

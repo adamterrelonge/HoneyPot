@@ -29,7 +29,8 @@ function useNodeSim(id: string | null | undefined): NodeSim | undefined {
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-export function Sidebar({ width }: { width: number }) {
+/** `onClose` is set when the list is a drawer over the map (compact screens). */
+export function Sidebar({ width, onClose }: { width: number; onClose?: () => void }) {
   const topology = useApp((s) => s.topology);
   const selectedId = useApp((s) => s.selectedId);
   const select = useApp((s) => s.select);
@@ -59,16 +60,25 @@ export function Sidebar({ width }: { width: number }) {
     <aside
       data-tour="devices"
       aria-label="Devices"
-      className="glass absolute top-[72px] bottom-3 left-3 flex flex-col overflow-hidden rounded-[20px]"
+      className={`glass absolute top-[var(--top,72px)] bottom-3 left-3 flex flex-col overflow-hidden rounded-[20px] ${onClose ? "z-30" : ""}`}
       style={{ width }}
       onMouseLeave={() => hover(null)}
     >
       <div className="px-4 pt-4 pb-3">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline justify-between gap-2">
           <h2 className="text-[15px] font-semibold">Network</h2>
-          <span className="text-[11px] text-ink-3">
+          <span className="flex-1 text-right text-[11px] text-ink-3">
             {topology.nodes.reduce((s, n) => s + (n.kind === "internet" ? 0 : n.count), 0).toLocaleString()} devices · {topology.nodes.length} on map
           </span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              aria-label="Close the device list"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-fill/[0.05] text-[13px] text-ink-2 hover:bg-fill/[0.09]"
+            >
+              ✕
+            </button>
+          )}
         </div>
         <input
           value={query}
@@ -163,7 +173,7 @@ export function Inspector({ width }: { width: number }) {
       inert={!open}
       data-tour="inspector"
       aria-label="Device details"
-      className={`glass absolute top-[72px] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
+      className={`glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
       style={{ width }}

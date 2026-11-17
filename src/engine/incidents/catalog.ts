@@ -3,11 +3,14 @@
  * Pure data. Scenario files are validated with Zod so they can later be loaded from JSON.
  */
 import { z } from "zod";
+import { INDUSTRIES, type Industry } from "../model";
 import type { AppId } from "../sim/types";
 
 export const INCIDENT_KINDS = [
   "ransomware", "phishing", "edge-exploit", "ddos", "isp-outage",
   "dns-misconfig", "cert-expired", "backup-saturation", "failed-update", "insider",
+  // Phase 9
+  "supply-chain", "credential-stuffing", "ot-ransomware", "invoice-fraud",
 ] as const;
 export type IncidentKind = (typeof INCIDENT_KINDS)[number];
 
@@ -62,6 +65,38 @@ export const INCIDENT_INFO: Record<IncidentKind, { title: string; icon: string; 
     blurb: "A trusted user quietly copies client data out of the business.",
     advice: ["Least-privilege access to client data", "Decoy shares catch snooping early", "Watch outbound data volumes"],
   },
+  "supply-chain": {
+    title: "Compromised software update", icon: "📦",
+    blurb: "A trusted vendor's update was backdoored; it arrived on several servers at once (as with SolarWinds and 3CX).",
+    advice: [
+      "Stage vendor updates: try them on one machine before the rest",
+      "Watch servers' outbound traffic; backdoors call home",
+      "Remove the backdoored version and block its update server; resetting passwords alone won't evict it",
+    ],
+  },
+  "credential-stuffing": {
+    title: "Credential stuffing on the VPN", icon: "🔑",
+    blurb: "Attackers try thousands of leaked passwords against the VPN, hoping a member of staff reused one.",
+    advice: ["MFA on every remote login stops reused passwords cold", "Block attacking IP ranges early", "Alert on bursts of failed sign-ins"],
+  },
+  "ot-ransomware": {
+    title: "Ransomware on the production line", icon: "🏭",
+    blurb: "Attackers pivot from the office to controllers and clinical devices, then lock them; operations stop.",
+    advice: [
+      "Block every zone from the OT and clinical floors, not just the office: attackers pivot through servers and the DMZ",
+      "Keep offline copies of controller programs and device images",
+      "Contain fast: every minute the line is down costs the most of any outage",
+    ],
+  },
+  "invoice-fraud": {
+    title: "Invoice fraud (business email compromise)", icon: "🧾",
+    blurb: "A convincing email asks Finance to pay a supplier's 'new' bank account before the deadline.",
+    advice: [
+      "Verify bank-detail changes by phone on a number you already hold",
+      "MFA on finance mailboxes stops attackers sending from the real account",
+      "Two people approve any payment above a threshold",
+    ],
+  },
 };
 
 export interface ActionDef {
@@ -81,7 +116,22 @@ export const ACTIONS: Record<string, ActionDef & { kinds: IncidentKind[] }> = {
   "reset-credentials": {
     label: "Reset passwords & revoke sessions", minutes: 30, cost: 200,
     blurb: "Evicts an attacker using stolen logins. Devices still open to an exploited CVE stay compromised.",
-    kinds: ["ransomware", "phishing", "edge-exploit"],
+    kinds: ["ransomware", "phishing", "edge-exploit", "supply-chain", "credential-stuffing", "ot-ransomware", "invoice-fraud"],
+  },
+  "remove-backdoor": {
+    label: "Remove the backdoored update & block its server", minutes: 120, cost: 3000,
+    blurb: "Roll every affected server back to the clean version and cut off the attacker's callback.",
+    kinds: ["supply-chain"],
+  },
+  "block-ips": {
+    label: "Block the attacking IP ranges", minutes: 10, cost: 0,
+    blurb: "Stops the login storm if it's done before a password works; useless once they're in.",
+    kinds: ["credential-stuffing"],
+  },
+  "verify-payment": {
+    label: "Phone the supplier on a known number", minutes: 15, cost: 0,
+    blurb: "Confirms the bank change is fake and stops the payment, if done before the deadline.",
+    kinds: ["invoice-fraud"],
   },
 };
 
@@ -91,6 +141,8 @@ export const RESTORE = {
   offsite: { label: "Restore from the offsite backup", minutes: 240, cost: 2000 },
   rebuild: { label: "Rebuild from scratch (no backup)", minutes: 1440, cost: 10000 },
   reimage: { label: "Re-image the devices", minutes: 60, cost: 500 },
+  controller: { label: "Reload controller programs from the engineering backup", minutes: 180, cost: 3000 },
+  clinical: { label: "Vendor re-images the clinical device", minutes: 240, cost: 2500 },
 } as const;
 
 /**
@@ -100,6 +152,8 @@ export const RESTORE = {
 export const COST_PER_USER_MINUTE: Partial<Record<AppId, number>> = {
   "email-docs": 0.18, files: 0.21, "practice-db": 0.21, web: 0.06, print: 0.03, remote: 0.24, voice: 0.15,
   portal: 0.1, payments: 1.5, production: 3, imaging: 0.6, cctv: 0.02,
+  // Pickers stood idle and lorries missing their slots.
+  warehouse: 0.9,
 };
 
 /** Incident-response budget per employee, by IT budget. */
@@ -126,6 +180,8 @@ export const ScenarioSchema = z.object({
   durationHours: z.number().positive().max(48),
   events: z.array(z.object({ afterMinutes: z.number().nonnegative(), incident: z.enum(INCIDENT_KINDS) })).min(1),
   objectives: z.array(ObjectiveSchema).min(1),
+  /** Only offered to these industries (absent = any business). */
+  industries: z.array(z.enum(INDUSTRIES)).min(1).optional(),
 });
 export type Scenario = z.output<typeof ScenarioSchema>;
 
@@ -185,4 +241,89 @@ export const SCENARIOS: Scenario[] = [
       { kind: "max-data", mb: 2000, label: "Lose less than 2 GB of data" },
     ],
   },
+  // ── Phase 9 ──
+  {
+    id: "poisoned-update", name: "The poisoned update", difficulty: "medium", durationHours: 10,
+    description: "A trusted vendor's update carried a backdoor onto your servers. It won't announce itself.",
+    events: [{ afterMinutes: 15, incident: "supply-chain" }],
+    objectives: [
+      { kind: "max-data", mb: 3000, label: "Lose less than 3 GB of data" },
+      { kind: "contain-within", minutes: 150, label: "Contain within 2½ hours of detection" },
+    ],
+  },
+  {
+    id: "dawn-raid", name: "Dawn raid on the VPN", difficulty: "easy", durationHours: 4,
+    description: "Leaked passwords are being tried against your VPN. Close the door before one of them works.",
+    events: [{ afterMinutes: 5, incident: "credential-stuffing" }],
+    objectives: [
+      { kind: "max-data", mb: 200, label: "Lose less than 200 MB of data" },
+      { kind: "contain-within", minutes: 45, label: "Shut it down within 45 minutes of the alert" },
+    ],
+  },
+  {
+    id: "payroll-friday", name: "Payroll Friday", difficulty: "medium", durationHours: 6,
+    description: "Finance is busy, payments are going out, and someone is counting on a rushed approval.",
+    events: [
+      { afterMinutes: 30, incident: "invoice-fraud" },
+      { afterMinutes: 100, incident: "phishing" },
+      { afterMinutes: 210, incident: "invoice-fraud" },
+    ],
+    objectives: [
+      { kind: "max-loss", fraction: 0.15, label: "Keep losses under 15% of the budget" },
+      { kind: "contain-within", minutes: 60, label: "Deal with each within an hour" },
+    ],
+  },
+  {
+    id: "line-down", name: "Line down", difficulty: "hard", durationHours: 8, industries: ["manufacturing"],
+    description: "Ransomware is heading for the production line. Every minute the line stops costs more than anything else.",
+    events: [{ afterMinutes: 20, incident: "ot-ransomware" }, { afterMinutes: 180, incident: "failed-update" }],
+    objectives: [
+      { kind: "max-loss", fraction: 0.35, label: "Keep losses under 35% of the budget" },
+      { kind: "contain-within", minutes: 60, label: "Contain within an hour of detection" },
+    ],
+  },
+  {
+    id: "clinic-siege", name: "Clinic under siege", difficulty: "hard", durationHours: 9, industries: ["healthcare"],
+    description: "The line drops, then attackers go after the imaging devices while patients wait.",
+    events: [
+      { afterMinutes: 10, incident: "isp-outage" },
+      { afterMinutes: 60, incident: "ot-ransomware" },
+      { afterMinutes: 240, incident: "cert-expired" },
+    ],
+    objectives: [
+      { kind: "max-loss", fraction: 0.35, label: "Keep losses under 35% of the budget" },
+      { kind: "contain-within", minutes: 75, label: "Contain each within 75 minutes" },
+    ],
+  },
+  {
+    id: "exam-season", name: "Exam season", difficulty: "medium", durationHours: 7, industries: ["education"],
+    description: "Results week: the parent portal is under attack, staff passwords are leaking and someone is curious about student records.",
+    events: [
+      { afterMinutes: 30, incident: "ddos" },
+      { afterMinutes: 120, incident: "credential-stuffing" },
+      { afterMinutes: 240, incident: "insider" },
+    ],
+    objectives: [
+      { kind: "max-data", mb: 1500, label: "Lose less than 1.5 GB of student data" },
+      { kind: "contain-within", minutes: 60, label: "Contain each within an hour" },
+    ],
+  },
+  {
+    id: "peak-dispatch", name: "Peak dispatch", difficulty: "medium", durationHours: 8, industries: ["logistics"],
+    description: "The busiest shift of the year: backups misfire, the line drops, then ransomware goes for the warehouse system.",
+    events: [
+      { afterMinutes: 30, incident: "backup-saturation" },
+      { afterMinutes: 120, incident: "isp-outage" },
+      { afterMinutes: 240, incident: "ransomware" },
+    ],
+    objectives: [
+      { kind: "max-loss", fraction: 0.3, label: "Keep losses under 30% of the budget" },
+      { kind: "contain-within", minutes: 60, label: "Contain each within an hour" },
+    ],
+  },
 ];
+
+/** Scenarios this business can play (industry-specific ones need that industry). */
+export function scenariosFor(industry: Industry | undefined): Scenario[] {
+  return SCENARIOS.filter((s) => !s.industries || (industry !== undefined && s.industries.includes(industry)));
+}
