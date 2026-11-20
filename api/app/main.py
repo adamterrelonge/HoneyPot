@@ -26,8 +26,8 @@ from .config import Settings, get_settings
 from .db import Database
 from .models import Score, Share
 from .schemas import (
-    SaveFile,
     SCENARIO_PATTERN,
+    SaveFile,
     ScoreAccepted,
     ScoreIn,
     ScoreOut,
@@ -121,7 +121,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         s.add(row)
         s.commit()
         better = s.scalar(
-            select(func.count()).select_from(Score).where(Score.scenario_id == body.scenario_id, Score.score > body.score)
+            select(func.count())
+            .select_from(Score)
+            .where(Score.scenario_id == body.scenario_id, Score.score > body.score)
         )
         return ScoreAccepted(id=row.id, grade=row.grade, rank=(better or 0) + 1)
 
@@ -138,7 +140,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             .limit(limit)
         ).all()
         return [
-            ScoreOut(rank=i + 1, player=r.player, industry=r.industry, score=r.score, grade=r.grade, created_at=r.created_at)
+            ScoreOut(
+                rank=i + 1,
+                player=r.player,
+                industry=r.industry,
+                score=r.score,
+                grade=r.grade,
+                created_at=r.created_at,
+            )
             for i, r in enumerate(rows)
         ]
 

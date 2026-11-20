@@ -210,8 +210,10 @@ Known limitations:
 
 ## Credits
 
+Designed and built by **Adam Terrelonge**.
+
 The Honeypot logo, the industry images (`public/emoji/industry-*.png`) and the ISP device image
-are custom artwork for this project.
+are original artwork by Adam Terrelonge, released with the project under the MIT licence.
 
 Other device artwork uses [Microsoft Fluent Emoji](https://github.com/microsoft/fluentui-emoji) (MIT).
 See [`public/emoji/LICENSE-fluentui-emoji.txt`](public/emoji/LICENSE-fluentui-emoji.txt).
