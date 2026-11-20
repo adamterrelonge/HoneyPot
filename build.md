@@ -57,7 +57,10 @@ sends network traffic beyond loading its own assets.
 | Schemas | **Zod 4** | Topologies, scenarios and commands are validated at the boundary. |
 | Styling | **Tailwind CSS 4** + CSS custom properties | Tokens in `src/styles.css`. |
 | Font | System stack → **Inter Variable** fallback | SF Pro can't be redistributed, so Apple devices get it natively. |
-| Tests | **Vitest** (engine and math), Chrome DevTools/Playwright for visual checks | |
+| Tests | **Vitest** (engine and math), Chrome DevTools/Playwright for visual checks, Lighthouse | |
+| CI | **GitHub Actions** (`.github/workflows/ci.yml`) | Phase 10 |
+| Engine hot paths | **Rust → WebAssembly** (`engine-rs/`), draft | Phase 10; TS engine stays the reference |
+| Backend (optional) | **FastAPI** + SQLAlchemy (`api/`), draft | Phase 10 |
 | Worker RPC | **Comlink 4** | `src/worker/sim.worker.ts` exposes `SimHost`. |
 | Persistence | IndexedDB via a ~70-line wrapper (Phase 7; Dexie wasn't needed for one object store) | |
 
@@ -650,6 +653,42 @@ criteria pass and a diary entry exists.
   - Both new industries are healthy at 10:30.
   - The CVE facts test passes.
   - Lighthouse accessibility scores 100 at tablet portrait size.
+
+### Phase 10 — Release readiness & extensions ✅ (2026-11-20)
+- Decisions: MIT licence; GitHub Actions CI; phone layouts; start a Rust/WebAssembly engine port
+  and an optional FastAPI backend as drafts.
+- **Branding:** the custom logo (602×314, transparent) is drawn by `ui/logo.tsx` as a CSS mask in
+  the text colour, so it keeps its shape at any height and follows the theme. Square favicons
+  (32/180/192/512 px, logo on a honey-yellow tile) are generated from it.
+- **Custom industry artwork** for all six industries; Education and Logistics no longer fall back to
+  the HQ image.
+- **Repository:** `.gitignore` line 5 had been written as UTF-16, which git read as `*`, so every new
+  file was silently ignored (including the README). Rewritten as plain ASCII. MIT `LICENSE`.
+- **CI** (`.github/workflows/ci.yml`): web (npm ci, WASM build, typecheck, tests, build), Rust
+  (fmt, clippy `-D warnings`, tests) and API (ruff, pytest; mypy reported only).
+- **Generator golden hashes** (`gen/golden.test.ts`): 144 specs of the original four industries are
+  hashed and compared with a fixture recorded from the Phase 8 commit (`eaffe79`), making the
+  Phase 9 "byte-for-byte" check permanent.
+- **Bundle:** vendor code split into `react`, `pixi` and `vendor` chunks; the app chunk is ~204 kB.
+  PixiJS stays one ~670 kB chunk (a size split breaks its side-effect registration order), so the
+  warning limit is 700 kB.
+- **Phones and high zoom** (down to 320 px wide, i.e. 400% zoom on a 1280 px screen):
+  - Top-bar clock controls and the table view header wrap.
+  - Wizard: logo shrinks below `sm`; industry cards go to one column below 400 px; on screens under
+    600 px tall the whole card scrolls instead of only the form.
+  - Below 640 px, right-hand panels run to the bottom of the screen, and the activity feed and zoom
+    buttons hide while one is open.
+- **Rust → WASM draft** (`engine-rs/`, `src/wasm/`): firewall policy `decide` ported; parity-tested
+  against TypeScript on all six industries. Resident interface (interned ids, typed arrays) is
+  5–8× faster than TypeScript; the JSON interface is 3–4× slower and kept only for simplicity.
+  Not wired into the simulation yet.
+- **FastAPI draft** (`api/`): share links and scenario leaderboards; SQLite or Postgres.
+- **Done when:**
+  - `npm ci && npm run build:wasm && npm run check` pass on a clean clone.
+  - Golden hashes match Phase 8.
+  - WASM parity holds for every industry.
+  - Lighthouse accessibility is 100 at 390 px and 768 px.
+  - No horizontal overflow at 320 px in the wizard, top bar, drawers, sheets or inspector.
 
 ---
 

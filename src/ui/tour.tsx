@@ -10,6 +10,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { create } from "zustand";
 import { usePrefs } from "../state/prefs";
 import { useApp } from "../state/store";
+import { Logo } from "./logo";
 import { primary } from "./game-panels";
 
 interface Step {
@@ -167,7 +168,7 @@ function TourOffer() {
       className="glass absolute top-[calc(var(--top,72px)+12px)] left-1/2 z-40 w-[380px] -translate-x-1/2 rounded-[18px] bg-surface/90 p-5"
     >
       <div className="flex items-center gap-3">
-        <img src="/emoji/honeypot.png" alt="" className="h-9 w-9" />
+        <Logo className="h-8" />
         <h2 id="tour-offer-title" className="text-[16px] font-semibold">Take a quick tour?</h2>
       </div>
       <p id="tour-offer-body" className="mt-2 text-[13px] leading-snug text-ink-2">

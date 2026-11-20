@@ -52,7 +52,7 @@ export function SimControls() {
   const iconBtn =
     "flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px] text-ink-2 transition-colors hover:bg-fill/[0.05] hover:text-ink";
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
       <div className="mr-1 flex items-baseline gap-1.5 tabular-nums" aria-live="off">
         <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-3">{clock?.day ?? "—"}</span>
         <span className="w-[42px] text-[15px] font-semibold tracking-tight">{clock?.time ?? "--:--"}</span>
@@ -115,7 +115,7 @@ export function ServicesPanel({ width, open }: { width: number; open: boolean })
       inert={!open}
       data-tour="services"
       aria-label="Business services"
-      className={`glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
+      className={`glass absolute top-[var(--top,72px)] right-3 bottom-3 z-10 sm:bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
       style={{ width }}

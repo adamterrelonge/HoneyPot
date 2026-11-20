@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web app (typecheck, tests, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine-rs
+      # `npm ci` fails if package-lock.json has drifted from package.json (Phase 9 issue).
+      - run: npm ci
+      # Built first so the Rust/WASM parity tests run instead of being skipped.
+      - run: npm run build:wasm
+      - run: npm run check
+
+  engine-rs:
+    name: Rust engine (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine-rs
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+
+  api:
+    name: API (ruff, pytest, mypy)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: pytest -q
+      # Draft backend: strict typing is reported but doesn't fail the build yet.
+      - run: mypy app
+        continue-on-error: true

@@ -7,7 +7,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.engine.json",
     "test": "vitest run",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build",
+    "build:wasm": "cargo build --manifest-path engine-rs/Cargo.toml --target wasm32-unknown-unknown --release"
   },
   "type": "module",
   "dependencies": {
@@ -31,5 +32,6 @@
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
   },
+  "license": "MIT",
   "private": true
 }

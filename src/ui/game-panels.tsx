@@ -198,7 +198,7 @@ export function IncidentsPanel({ width }: { width: number }) {
   const done = g.incidents.filter((i) => i.status === "resolved" || i.status === "blocked");
   return (
     <aside
-      className="glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px]"
+      className="glass absolute top-[var(--top,72px)] right-3 bottom-3 z-10 sm:bottom-[168px] flex flex-col overflow-hidden rounded-[20px]"
       style={{ width }}
       aria-label="Incidents"
     >

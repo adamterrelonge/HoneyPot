@@ -10,6 +10,7 @@ import {
 } from "../engine/gen/spec";
 import { BUDGETS, BUSINESS_SIZES, COMPLIANCE, HOSTING, INDUSTRIES, type BusinessSize, type Industry } from "../engine/model";
 import { sampleTopology, useApp } from "../state/store";
+import { Logo } from "./logo";
 import { useDialogFocus } from "./a11y";
 import { DontAskAgain, tour } from "./tour";
 import { formatRate } from "./sim-panels";
@@ -81,15 +82,16 @@ export function Wizard() {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex items-center justify-center bg-surface/35 p-6 backdrop-blur-[6px]"
+      className="absolute inset-0 z-50 flex items-center justify-center bg-surface/35 p-3 backdrop-blur-[6px] sm:p-6"
       role="dialog"
       aria-modal="true"
       aria-labelledby="wizard-title"
       ref={dialogRef}
     >
-      <div className="glass flex max-h-full w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
-        <header className="flex items-start gap-3 px-7 pt-6 pb-4">
-          <img src="/emoji/honeypot.png" alt="" className="h-10 w-10" />
+      {/* Short screens (e.g. 200–400% zoom): the whole card scrolls, so the form isn't squeezed between header and footer. */}
+      <div className="glass flex max-h-full w-full max-w-[760px] flex-col overflow-hidden rounded-[24px] bg-surface/85 [@media(max-height:600px)]:overflow-y-auto">
+        <header className="flex items-start gap-3 px-5 sm:px-7 pt-6 pb-4">
+          <Logo className="mt-1.5 h-6 sm:mt-1 sm:h-10" />
           <div className="flex-1">
             <h1 id="wizard-title" className="text-[22px] font-semibold tracking-tight">Create a business</h1>
             <p className="text-[13px] text-ink-2">
@@ -114,7 +116,7 @@ export function Wizard() {
           </button>
         </header>
 
-        <div className="flex-1 space-y-5 overflow-y-auto px-7 pb-5">
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 sm:px-7 pb-5 [@media(max-height:600px)]:flex-none [@media(max-height:600px)]:overflow-visible">
           <Field label="Business name">
             <div className="flex gap-2">
               <input
@@ -125,11 +127,11 @@ export function Wizard() {
                 }}
                 maxLength={60}
                 aria-label="Business name"
-                className="h-9 flex-1 rounded-[10px] bg-fill/[0.045] px-3 text-[14px] outline-none focus:bg-surface focus:ring-[3px] focus:ring-accent/25"
+                className="h-9 min-w-0 flex-1 rounded-[10px] bg-fill/[0.045] px-3 text-[14px] outline-none focus:bg-surface focus:ring-[3px] focus:ring-accent/25"
               />
               <button
                 onClick={surprise}
-                className="h-9 rounded-[10px] bg-fill/[0.05] px-3 text-[13px] font-medium text-ink-2 hover:bg-fill/[0.08]"
+                className="h-9 shrink-0 whitespace-nowrap rounded-[10px] bg-fill/[0.05] px-3 text-[13px] font-medium text-ink-2 hover:bg-fill/[0.08]"
               >
                 🎲 Surprise me
               </button>
@@ -137,7 +139,7 @@ export function Wizard() {
           </Field>
 
           <Field label="Industry">
-            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-2.5 min-[400px]:grid-cols-2 sm:grid-cols-3">
               {INDUSTRIES.map((id) => {
                 const info = INDUSTRY_INFO[id];
                 const on = spec.industry === id;
@@ -269,8 +271,8 @@ export function Wizard() {
           </Field>
         </div>
 
-        <footer className="flex flex-wrap items-center gap-3 border-t border-hairline bg-surface/60 px-7 py-4">
-          <div className="min-w-0 flex-1 text-[12px] text-ink-2" aria-live="polite">
+        <footer className="flex flex-wrap items-center gap-3 border-t border-hairline bg-surface/60 px-5 sm:px-7 py-4">
+          <div className="min-w-[220px] flex-1 text-[12px] text-ink-2" aria-live="polite">
             {"error" in preview ? (
               <span className="text-bad-ink">{preview.error}</span>
             ) : (

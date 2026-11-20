@@ -11,6 +11,7 @@ import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
+import { Logo } from "./ui/logo";
 import { usePrefs } from "./state/prefs";
 import { useViewport } from "./state/viewport";
 
@@ -55,6 +56,9 @@ export function App() {
     [compact],
   );
   const servicesVisible = !selectedId && !tracing && !incidentsOpen && (!compact || servicesOpen);
+  // Phones: a right-hand panel runs to the bottom of the screen, so the feed and zoom buttons step aside.
+  const rightPanelOpen = servicesVisible || !!selectedId || tracing || incidentsOpen;
+  const phoneCovered = width < 640 && rightPanelOpen;
 
   return (
     <div className="relative h-full w-full select-none">
@@ -66,8 +70,8 @@ export function App() {
       <Inspector width={rightW} />
       <TracePanel width={rightW} />
       {!tracing && <IncidentsPanel width={rightW} />}
-      <ZoomControls />
-      <ActivityFeed left={compact ? 12 : SIDEBAR_W + 24} right={72} />
+      {!phoneCovered && <ZoomControls />}
+      {!phoneCovered && <ActivityFeed left={compact ? 12 : SIDEBAR_W + 24} right={72} />}
       <TableView left={compact ? 12 : SIDEBAR_W + 24} right={compact ? 12 : INSPECTOR_W + 24} />
       <LiveAnnouncer />
       <ErrorToast />
@@ -152,7 +156,7 @@ function TopBar() {
       ref={ref}
       className="glass pointer-events-auto absolute top-3 left-3 right-3 z-20 flex min-h-12 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-[14px] px-4 py-2"
     >
-      <img src="/emoji/honeypot.png" alt="" className="h-6 w-6" />
+      <Logo className="h-7" />
       <span className="hidden text-[15px] font-semibold tracking-tight sm:inline">Honeypot</span>
       <span className="hidden h-5 w-px bg-hairline sm:inline" />
       <span className="max-w-[220px] truncate text-[13px] font-medium">{meta.name}</span>
@@ -200,8 +204,8 @@ function TopBar() {
       </button>
       <GameHud />
       {compact && <MoreMenu>{secondary}<ThemeToggle /></MoreMenu>}
-      <div className="ml-auto flex items-center gap-3">
-        <div data-tour="clock" className="flex items-center gap-3">
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
+        <div data-tour="clock" className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <HistoryButtons />
           <SimControls />
         </div>

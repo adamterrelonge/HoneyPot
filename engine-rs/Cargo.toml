@@ -1,0 +1,22 @@
+[package]
+name = "honeypot-engine"
+version = "0.1.0"
+edition = "2021"
+description = "Rust/WebAssembly port of Honeypot's simulation hot paths (draft: firewall policy evaluation)"
+license = "MIT"
+publish = false
+
+[lib]
+# cdylib -> honeypot_engine.wasm for the browser; rlib -> `cargo test` on the host.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

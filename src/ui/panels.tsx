@@ -173,7 +173,7 @@ export function Inspector({ width }: { width: number }) {
       inert={!open}
       data-tour="inspector"
       aria-label="Device details"
-      className={`glass absolute top-[var(--top,72px)] right-3 bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
+      className={`glass absolute top-[var(--top,72px)] right-3 bottom-3 z-10 sm:bottom-[168px] flex flex-col overflow-hidden rounded-[20px] transition-[transform,opacity] duration-200 ease-out ${
         open ? "translate-x-0 opacity-100" : "pointer-events-none translate-x-[calc(100%+24px)] opacity-0"
       }`}
       style={{ width }}

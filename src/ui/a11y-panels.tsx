@@ -116,7 +116,7 @@ export function TableView({ left, right }: { left: number; right: number }) {
       className="glass absolute top-[var(--top,72px)] bottom-3 z-30 flex flex-col overflow-hidden rounded-[20px] bg-surface/90"
       style={{ left, right }}
     >
-      <header className="flex items-center gap-3 px-4 pt-3 pb-2">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-3 pb-2">
         <h2 id="table-title" className="text-[15px] font-semibold">
           Network table
         </h2>

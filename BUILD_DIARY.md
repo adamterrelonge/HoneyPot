@@ -1083,3 +1083,83 @@ All nine phases in `build.md` are complete.
 1. Which licence should the public repository use (for example MIT), or should it stay all rights reserved?
 2. Should a GitHub Actions CI workflow be added?
 3. Which direction next: the manual accessibility audit, simulation depth, or sharing beyond one browser?
+
+---
+
+## Phase 10 — Release readiness & extensions · 2026-11-20 · ✅ complete
+
+Decisions applied (answering the Phase 9 hand-off): MIT licence; a GitHub Actions CI workflow; all
+outstanding debt cleared where it can be done without a human tester; then drafts of a Rust/WebAssembly
+engine port and an optional Python backend.
+
+### 1. Summary
+- **Logo:** the custom bear logo (602×314, transparent) replaced the square emoji. `src/ui/logo.tsx` draws it
+  as a CSS mask filled with the text colour, so it keeps its aspect ratio at any height and turns white in
+  dark mode. Used in the top bar (`h-7`), tour card (`h-8`) and wizard (`h-6` on phones, `h-10` from `sm`).
+  Square favicons (32/180/192/512 px) put the logo on a honey-yellow rounded tile; `index.html` links them
+  with an Apple touch icon and `theme-color`. The README uses the 512 px icon.
+- **Industry artwork:** custom images for all six industries, including the two that were missing
+  (Education, Logistics), plus a new ISP image. All load from their own files (no HQ fallback).
+- **Licence:** MIT (`LICENSE`, `package.json`); README credits separate custom artwork from Fluent Emoji.
+- **CI:** `.github/workflows/ci.yml` with three jobs: web, Rust engine and API.
+- **Generator golden hashes:** `src/engine/gen/golden.test.ts` + `golden-144.json`, recorded from the Phase 8
+  commit `eaffe79` in a temporary worktree. This re-records, and makes permanent, the Phase 9 criterion.
+- **Bundle split:** `react` (219 kB), `vendor` (164 kB), `pixi` (669 kB) and app (204 kB) chunks instead of
+  one 923 kB chunk.
+- **Phones and high zoom:** layout fixes listed in build.md Phase 10; `public/robots.txt` added.
+- **Rust → WebAssembly draft:** `engine-rs/` ports firewall policy evaluation, with a JSON batch interface and
+  a resident interface (topology loaded once, integer ids, typed arrays). `src/wasm/policy-wasm.ts` loads it;
+  `npm run build:wasm` builds it. Not used by the simulation yet.
+- **FastAPI draft:** `api/` with share links and scenario leaderboards, Dockerfile and its own README.
+
+### 2. Tests run
+| Check | How | Result |
+|---|---|---|
+| Clean install | `npm ci` | ✅ lockfile in sync, 0 vulnerabilities |
+| Typecheck | `npm run typecheck` (app + engine configs) | ✅ |
+| Unit tests | `npm test` | ✅ **195 passed, 18 files** (was 186 / 16) |
+| Golden hashes | 144 specs vs Phase 8 commit `eaffe79` | ✅ all identical |
+| WASM parity | 2,000 random flows × 6 industries, JSON and resident interfaces | ✅ identical decisions and reasons |
+| Rust | `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test` | ✅ 8 passed |
+| WASM benchmark | 100k decisions, enterprise retail business, Node 24 | TS 15.4 ms / resident 2.8 ms (7 rules); TS 102 ms / resident 12.2 ms (60 rules); JSON interface 66 ms (slower than TS) |
+| Build | `npm run build` | ✅ no chunk-size warning |
+| Lighthouse (snapshot) | 390×844 phone and 768×1024 tablet portrait | ✅ Accessibility 100, Best practices 100, SEO 100 (83 before `robots.txt`) |
+| Overflow audit | Script over header, drawers, sheets and inspector at 320×568 | ✅ none, except data tables, which scroll inside their panel (allowed by WCAG 1.4.10) |
+| Visual checks | Chrome DevTools: logo at 390/1440/1920 px, light and dark; wizard at 320/390/640×450; Education and Logistics businesses generated and healthy | ✅ 0 console errors |
+| API | — | ⚠️ **not run locally**: Python isn't installed on the build machine. First run is the CI `api` job |
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| README never reached GitHub; new files didn't show in `git status` | `.gitignore` line 5 (`*.stackdump`) was appended as UTF-16; git read it as `*` | Rewrote `.gitignore` as ASCII |
+| Logo squashed into a square and invisible in dark mode | Wide black PNG in `h-6 w-6` boxes | `Logo` component (CSS mask, aspect ratio, text colour) |
+| Wizard title squeezed to two lines on phones | 77 px-wide logo beside the title | Smaller logo below `sm` |
+| App failed to start: `Cannot read properties of undefined (reading 'add')` | Splitting PixiJS by size reordered its side-effect imports | One `pixi` chunk; warning limit 700 kB, documented in `vite.config.ts` |
+| At 200% zoom the wizard form had ~130 px between a fixed header and footer | Only the middle section scrolled | Whole card scrolls on screens under 600 px tall |
+| At 320 px the speed buttons, "Surprise me", industry cards and "Back to map" ran off-screen | Rows that didn't wrap; input with an intrinsic minimum width | `flex-wrap`, `min-w-0`, one-column grid below 400 px |
+| At 320 px the inspector was ~160 px tall, with the activity feed showing through | Panels stop 168 px above the bottom for the feed | Below 640 px panels run to the bottom; feed and zoom hide while one is open |
+| `golden.test.ts` failed typecheck (`node:url`, `process`) | App is typed without `@types/node` | Declared the few Node APIs in `src/test-env.d.ts`, as before |
+| First WASM version slower than TypeScript | JSON serialisation dominated the cost | Resident interface with interned ids and typed arrays |
+| `npm ci` failed with `EPERM` on `lightningcss.win32-x64-msvc.node` | A `vite preview` server from the visual checks held the file open | Stopped the server, re-ran |
+
+### 4. Known limitations / debt
+- Screen-reader (NVDA, VoiceOver) and Windows high-contrast checks still need a human tester. Zoom and
+  reflow are now covered.
+- The API has never been executed: its tests, lint and types first run in CI. Expect small fixes.
+- The Rust engine isn't wired into the simulation; only policy evaluation is ported.
+- API scores are trusted as submitted (seed and state hash are stored for later verification).
+- On phones the map is usable but small; the device list is the practical way in.
+- The licence names "Adam Terrelonge" as copyright holder; change it if a different name should appear.
+
+### 5. Ideas for later
+- Wire the resident WASM policy into the worker behind a feature flag, then port flow routing.
+- Verify leaderboard runs on the server by replaying the command log (Node or the Rust engine).
+- Frontend `VITE_API_URL` integration: "Copy link" in Saves and a leaderboard in the Play sheet.
+- Deploy the static site (Cloudflare Pages or GitHub Pages) and link a live demo from the README.
+- Map incidents to MITRE ATT&CK technique ids in the after-action report.
+
+### 6. Hand-off
+**Decisions needed from you:**
+1. Push and check that all three CI jobs pass, especially `api`, which has never run.
+2. Where to host the live demo, and whether to deploy the API with it.
+3. Next priority: wiring WASM into the simulation, frontend integration of the API, or the manual screen-reader audit.
