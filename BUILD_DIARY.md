@@ -1317,3 +1317,59 @@ Honeypot logo, embedded as a data URL because an SVG drawn as an image can't loa
 Phase 14: learn mode (guided lessons per topic), staff awareness training, the Cyber Essentials gap report,
 the reviewer demo, and a README case study with a GIF. Rebalancing the data-theft penalty first is worth
 considering.
+
+---
+
+## Phase 14 — Learn mode and polish · 2026-11-21 · ✅ complete
+
+Decisions applied: rebalance the data-theft penalty first (the Phase 13 debt); check the Cyber Essentials
+wording against the NCSC's current document rather than memory; list what can't be assessed instead of
+passing it; lessons check the live network instead of asking "done?"; the demo saves nothing.
+
+### 1. Summary
+- **Scoring:** capped log penalty for stolen data; containment clocks stop at game end.
+- **Cyber Essentials gap report** (`engine/compliance/`): five controls from v3.3 (April 2026), one-click
+  fixes, Markdown export, an n/5 badge in the top bar.
+- **Change default password:** a new undoable command, a prompt in the inspector, and the attack model
+  reads it.
+- **Staff awareness training:** a fifth security tool that stops some phishing and invoice fraud.
+- **Learn mode:** four self-completing lessons per learn topic, started by onboarding or the Lessons sheet;
+  wording follows familiarity (the Phase 11 debt).
+- **Reviewer demo:** `?demo` starts a busy game at once with a banner explaining it.
+- **README:** live links, demo GIF, new features and a case study.
+
+### 2. Tests run
+| Check | How | Result |
+|---|---|---|
+| Cyber Essentials facts | NCSC overview and resources pages; requirements PDF v3.3 text extracted locally | ✅ version and date, five control names, 14 days / CVSS 7, MFA for cloud, malware options, backups not required |
+| Typecheck | `npm run typecheck` | ✅ |
+| Unit tests | `npx vitest run --testTimeout=60000` | ✅ **252 passed, 26 files** (7 WASM tests skipped without a local WASM build) |
+| New tests | `cyber-essentials.test.ts` (7), `lessons.test.ts` (5), awareness training, data penalty, event labels | ✅ |
+| Build | `npm run build` | ✅ main chunk 84 KB gzipped |
+| Browser | Gap report and its fixes (password, MFA, EDR, update tonight); lesson card completing from the inspector; `?demo` through to the after-action report | ✅ |
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Final score kept falling after a game ended | Open incidents' containment time used the live clock; hidden while data theft floored the score at 0 | Record the finish tick and stop the clocks there |
+| "undefined recovered" / "undefined down" in the activity feed | Labels cached at boot didn't include apps incidents inject (exfil, DDoS) | One `appName` helper with a fallback; regression test over the multi-incident scenario |
+| Edge-patching lesson step could never complete | The ISP router is provider-managed and can't be patched by the player | Provider-managed devices are excluded from the patch checks |
+| Lesson card unreadable over the map | Translucent "glass" background | Solid surface with a shadow, capped height |
+| Screen recording stopped after 5 s | The page stops painting while the browser is in the background | GIF built from screenshots of each stage instead |
+| Two timing tests failed in one full run | Wall-clock limits under parallel load (known) | Pass alone (47/47) and in the next full run |
+
+### 4. Known limitations / debt
+- The gap report assesses only what the simulation models; it isn't a certification check.
+- Malware protection counts only EDR; real built-in antivirus would qualify.
+- Lessons are written for the kinds of devices every business has, but the task text names the sample
+  business's devices.
+- The demo GIF is a slideshow of stills, not a recording.
+
+### 5. Ideas for later
+- Lessons for the "threats" topics, and a lesson for the alert queue itself.
+- Re-run the gap report at the end of a game and put the result on the report card.
+- An investigation view and a rule editor (from Phase 13).
+
+### 6. Hand-off
+The planned phases are done. Next candidates: the investigation view, scenarios opting into the attack
+planner, and a manual screen-reader audit.

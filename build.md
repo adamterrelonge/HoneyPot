@@ -774,6 +774,39 @@ criteria pass and a diary entry exists.
 - Not done: the Rust/WASM port of log generation and rule matching. A few events per tick is far below
   what needs it.
 
+### Phase 14 — Learn mode and polish ✅ (2026-11-21)
+- **Scoring:** stolen data costs `min(350, 120·log10(1 + MB/50))` instead of 0.08 per MB, so one long
+  theft no longer zeroes the score. Containment clocks stop when the game ends (`finishedTick`, saved only
+  when set).
+- **Cyber Essentials gap report** (`engine/compliance/cyber-essentials.ts`): the five controls of the NCSC's
+  Requirements for IT Infrastructure v3.3 (effective 27 April 2026), checked from a snapshot:
+  - Firewalls: a boundary firewall exists; no enabled allow rule lets the internet reach a private zone on
+    any service (checked with the real `decide`, so rule order counts). Narrow inbound rules and the edge
+    zone's public services are notes ("document the business need").
+  - Secure configuration: no device still on its default password.
+  - Security update management: no fix missing for an advisory with CVSS v3 7 or above; no end-of-life OS
+    unless cut off from the network (taking it out of scope). Provider-managed devices are a note.
+  - User access control: MFA on every role in use (the requirement: MFA where available, always for
+    cloud services).
+  - Malware protection: EDR deployed (the simulation counts only what you deploy).
+  - Not modelled, so listed as not assessed: firewall admin interfaces, account processes and separate
+    admin accounts, password length and throttling, auto-run, software firewalls on public wifi. Backups are
+    noted as recommended, not required.
+- **Change default password** (`node.setPassword {nodeId, changed}`): undoable, saved only when used. The
+  attack model now asks the world (`defaultPassword(id)`) instead of reading the tag.
+- **Staff awareness training** (`awareness-training` control, £10/employee): 4 in 10 phishing emails that
+  get past the gateway are reported (also for phished-in ransomware), and finance checks bank-detail changes
+  by phone (stops fake invoices as often).
+- **Learn mode** (`state/lessons.ts`, `ui/lessons.tsx`): four lessons, one per onboarding learn topic, each a
+  few steps of "why it matters" plus one action, completed by a pure check on the snapshot (and a few UI
+  facts such as the risk lens being on). The last step opens the Play sheet with the topic's scenario.
+  Wording follows familiarity: plain for newcomers, reasoning folded away for professionals. Progress in
+  localStorage (`honeypot.lessons`).
+- **Reviewer demo** (`?demo`): skips onboarding, deploys EDR and SIEM, starts "Everything, all at once" at
+  4×, and shows a banner explaining what to look at. Nothing is saved.
+- **README case study** with a GIF (`docs/demo.gif`, built from screenshots of the demo).
+- **Fix:** app labels for incident-injected apps (exfil, DDoS) printed "undefined" in events.
+
 ---
 
 ## 9. Conventions

@@ -14,6 +14,16 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT licence" /></a>
 </p>
 
+<p align="center">
+  <a href="https://adamterrelonge.github.io/HoneyPot/"><strong>Play it in the browser</strong></a> ·
+  <a href="https://adamterrelonge.github.io/HoneyPot/?demo"><strong>One-minute reviewer demo</strong></a> ·
+  <a href="#case-study">Case study</a>
+</p>
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Honeypot demo: a sample accounting firm's network on an isometric map; alerts arrive and are triaged, a Sigma detection rule is shown, the Cyber Essentials gap report lists gaps, and the after-action report shows score, response times and alert triage." width="960" />
+</p>
+
 ---
 
 ## What it is
@@ -59,6 +69,25 @@ over packet-level accuracy**. Every failure can be traced back to a cause you ca
   - Light and dark themes (follows the system, or toggle manually).
   - A full table view of the network for keyboard and screen-reader users.
   - Skip links, focus-managed dialogs, live announcements and reduced-motion support.
+- **Security operations.** Systems write realistic logs (Windows Security events, firewall, VPN,
+  email gateway, EDR, network flows). Ten detection rules in the [Sigma](https://sigmahq.io/) format
+  turn them into alerts, mixed with everyday false alarms, and you triage each one: escalate to
+  detect the incident at once, dismiss, or miss it. Logs export as JSON Lines.
+  - Buy security tools from each game's budget: EDR, central logging (SIEM), an email security
+    gateway, staff awareness training and immutable backups.
+- **Speaks the industry's language.** Incidents carry MITRE ATT&CK technique IDs; the report gives
+  mean time to detect, contain and resolve (MTTD, MTTC, MTTR); free play can pit you against a chosen
+  threat actor, and the ransomware gang plans its route to your crown jewels and re-plans around
+  your changes.
+- **Cyber Essentials gap report.** Checks the network against the five controls of the UK
+  government's baseline (NCSC requirements v3.3, April 2026), with one-click fixes, and lists what
+  the simulation can't assess instead of assuming it passes.
+- **Onboarding and learn mode.** A short, skippable start asks what you want to do and tailors the
+  rest. Four hands-on lessons (identity, ransomware, patching, outages) ask for one change at a time
+  and complete themselves when the network shows it, then run the matching scenario. Wording
+  adapts to how familiar you are.
+- **After-action report and report card.** Score, losses, response times, alert triage, objectives
+  and per-incident timelines, as Markdown or a one-page PNG.
 - **Guided tour.** A 10-step tour of the real UI, offered after you create a business.
 - **Desktop, tablet and phone.** Landscape and portrait tablet layouts with touch pan and
   pinch-zoom; on phones (down to 320 px wide, which also covers 400% browser zoom) panels take the
@@ -100,7 +129,8 @@ Open the URL Vite prints (usually <http://localhost:5173>). Create a business, o
 | Pause / resume | <kbd>Space</kbd> |
 | Close a panel or clear selection | <kbd>Esc</kbd> |
 
-Dev only: add `?stress=200` to the URL to load a synthetic 200-node topology.
+Add `?demo` to the URL for the reviewer demo (nothing is saved). Dev only: `?stress=200` loads a
+synthetic 200-node topology.
 
 ## Tech stack
 
@@ -145,7 +175,8 @@ Core principles:
 
 ```
 src/
-  engine/    pure TS simulation: model, catalogue, graph, sim/, gen/, policy/, firmware/, incidents/, save/
+  engine/    pure TS simulation: model, catalogue, graph, sim/, gen/, policy/, firmware/, incidents/,
+             soc/ (logs, Sigma rules, alerts), compliance/ (Cyber Essentials), save/
   worker/    sim.worker.ts (owns the simulation), wire.ts (compact snapshot transport)
   render/    isometric maths, cable routing, Pixi scene, theme
   state/     UI store, snapshot mirror, preferences, viewport
@@ -187,15 +218,68 @@ server. See [`api/README.md`](api/README.md) for endpoints, configuration and wh
 ledger of what is and isn't simulated, and the phase plan. [`BUILD_DIARY.md`](BUILD_DIARY.md)
 records what was built in each phase, with test results and decisions.
 
+## Case study
+
+**The problem.** Network security is usually taught either with slides, which don't show cause and
+effect, or with real labs, which are expensive to run and easy to get wrong. I wanted something in
+between: a business you can see, that behaves plausibly, where every failure traces back to a cause,
+and that anyone can open in a browser for free.
+
+**Constraints I set.** Free to host and run, so a static site with no server. Offline-first. No
+real network traffic and no exploit code. Realistic enough that the vocabulary transfers to a real
+job.
+
+**Key decisions and their trade-offs.**
+
+- **Flows, not packets.** Traffic is modelled as flows between services with bandwidth, latency and
+  loss, not individual packets. That keeps a 200-node business under 10 ms a tick in a Web Worker, at
+  the cost of anything packet-level (fragmentation, TCP behaviour). [`build.md`](build.md) keeps an
+  abstraction ledger of what is and isn't simulated.
+- **Deterministic engine, everything a command.** All randomness is seeded and every change is a
+  logged command. That one decision gave undo and redo, saves verified by a state hash, share codes,
+  whole-game replay tests and after-action timelines. The cost is discipline: new state is saved only
+  when it differs from the default, so older saves keep the same hash.
+- **Grounded in real sources, checked rather than remembered.** CVEs and scores were checked against
+  NVD and the CISA KEV catalogue, ATT&CK IDs against attack.mitre.org (one I couldn't confirm was
+  left out), the Cyber Essentials checks against the NCSC's v3.3 requirements, detection rules in the
+  Sigma format, and log addresses in the RFC 5737 documentation ranges.
+- **Measure before porting.** The first Rust/WebAssembly port of firewall evaluation was 3–4×
+  *slower* than TypeScript, because serialising across the boundary cost more than the work. Keeping
+  the topology resident in WASM memory made it 5–8× faster. It isn't wired in yet because TypeScript
+  is still fast enough.
+- **Dropped the backend.** A FastAPI service for share links and leaderboards works and is tested,
+  but hosting it means paid plans or cold starts. It stays a draft, and the site stays static on
+  GitHub Pages.
+
+**Things that went wrong, and what they taught me.**
+
+- Data theft cost 0.08 points per MB, so any long exfiltration floored the score at 0. Rebalancing
+  it to a capped log scale revealed a second bug the floor had hidden: after a game ended, open
+  incidents' containment clocks kept running, so the "final" score kept falling. Clamps hide bugs;
+  test the unclamped value.
+- Recording the demo GIF showed "undefined recovered" in the activity feed: labels for apps that
+  incidents inject (data leaving the network, DDoS) were never cached. A regression test now runs
+  the multi-incident scenario and checks every event.
+- Wall-clock performance tests fail on a busy laptop running 20+ test files in parallel. They pass
+  alone and in CI, and are documented rather than loosened.
+
+**Results.** 252 tests across 26 files in the web app (plus 7 WASM parity tests and 8 Rust tests),
+CI on every push, deploys from CI to GitHub Pages. The main bundle is 84 KB gzipped, with PixiJS
+split into its own 191 KB chunk. Lighthouse scored 100 for accessibility, best practices and SEO
+at phone and tablet sizes when last audited (Phase 10).
+
+**What I'd do next.** An investigation view (all logs for a host around an alert), a rule editor
+that replays a game to show alerts gained and lost, credentials and privilege in the attack
+planner, and a manual screen-reader audit.
+
 ## Project status
 
-Phases 1–10 are complete: foundation, simulation core, business generator, policy and trace,
+Phases 1–14 are complete: foundation, simulation core, business generator, policy and trace,
 firmware lifecycle, incidents and scoring, saves and sharing, accessibility and performance,
-content plus tablet support, and release readiness (CI, licence, phones, bundle split). The web
-app has 195 tests across 18 test files; the Rust engine has 8.
-
-Lighthouse scores 100 for accessibility, best practices and SEO at phone (390 px) and tablet
-portrait (768 px) sizes.
+content plus tablet support, release readiness, onboarding, the industry's language (ATT&CK,
+response metrics, threat actors, attack planner, report card), detection and triage, and learn
+mode with the Cyber Essentials gap report. [`BUILD_DIARY.md`](BUILD_DIARY.md) has each phase's
+tests, issues and debt.
 
 Known limitations:
 
