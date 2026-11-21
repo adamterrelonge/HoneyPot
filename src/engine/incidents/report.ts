@@ -31,7 +31,7 @@ const STATUS: Record<IncidentView["status"], string> = {
 
 export function reportMarkdown(g: GameView, info: ReportInfo): string {
   const out: string[] = [];
-  const mode = g.scenario ? `Scenario: ${g.scenario.name}` : g.mode === "free" ? `Free play (${g.intensity})` : "Sandbox";
+  const mode = g.scenario ? `Scenario: ${g.scenario.name}` : g.mode === "free" ? `Free play (${g.intensity}${g.actor.id === "mixed" ? "" : `, against ${g.actor.name}`})` : "Sandbox";
   out.push(`# After-action report: ${info.business}`, "");
   out.push(`${mode} · ${g.finished ? "game over" : "in progress"} at ${at(info.minute)}${info.exportedAt ? ` · exported ${info.exportedAt}` : ""}`, "");
 

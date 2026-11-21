@@ -12,6 +12,7 @@
  * Undetected incidents are invisible to the player until the after-action report.
  */
 import type { Advisory } from "../firmware/catalog";
+import { ACTORS, DEFAULT_ACTOR, actorWeights, type ActorId } from "./actors";
 import type { Condition } from "../firmware/lifecycle";
 import type { Budget, NetNode, NodeKind, Role, Topology } from "../model";
 import { MINUTES_PER_TICK, minuteOfTick, timeOfDay } from "../sim/clock";
@@ -55,7 +56,7 @@ export interface World {
 export type GameMode = "sandbox" | "free" | "scenario";
 
 export type IncidentCommand =
-  | { type: "game.start"; mode: "free" | "scenario"; scenarioId?: string; intensity?: Intensity }
+  | { type: "game.start"; mode: "free" | "scenario"; scenarioId?: string; intensity?: Intensity; actor?: ActorId }
   | { type: "game.stop" }
   | { type: "incident.start"; kind: IncidentKind; target?: string }
   | { type: "incident.act"; incidentId: string; action: string; nodeId?: string }
@@ -113,6 +114,8 @@ interface Incident {
 export interface IncidentState {
   mode: GameMode;
   intensity: Intensity;
+  /** Free-play adversary; absent means "mixed" (saved only when set, so older saves hash the same). */
+  actor?: ActorId;
   scenario: Scenario | null;
   finished: boolean;
   endTick?: number;
@@ -166,6 +169,7 @@ export interface ObjectiveView {
 export interface GameView {
   mode: GameMode;
   intensity: Intensity;
+  actor: { id: ActorId; name: string };
   scenario?: { id: string; name: string; description: string; endsMinute?: number };
   finished: boolean;
   budget: number;
@@ -185,6 +189,7 @@ export interface GameView {
 export class IncidentEngine {
   mode: GameMode = "sandbox";
   intensity: Intensity = "normal";
+  actor: ActorId = DEFAULT_ACTOR;
   scenario: Scenario | null = null;
   finished = false;
   readonly budget: number;
@@ -294,6 +299,7 @@ export class IncidentEngine {
         }
         this.mode = cmd.mode;
         this.intensity = cmd.intensity ?? "normal";
+        this.actor = cmd.mode === "free" ? (cmd.actor ?? DEFAULT_ACTOR) : DEFAULT_ACTOR;
         this.scenario = scenario ?? null;
         this.finished = false;
         this.incidents = [];
@@ -303,7 +309,8 @@ export class IncidentEngine {
           ? scenario.events.map((e) => ({ tick: w.tick + Math.round(e.afterMinutes / MINUTES_PER_TICK), kind: e.incident }))
           : [];
         this.endTick = scenario ? w.tick + Math.round(scenario.durationHours * TICKS_PER_HOUR) : undefined;
-        const text = scenario ? `Scenario started: ${scenario.name}` : `Free play started (${this.intensity})`;
+        const against = this.actor === DEFAULT_ACTOR ? "" : `, ${ACTORS[this.actor].name}`;
+        const text = scenario ? `Scenario started: ${scenario.name}` : `Free play started (${this.intensity}${against})`;
         return { ok: true, noop: false, event: { severity: "info", text } };
       }
       case "game.stop": {
@@ -832,7 +839,7 @@ export class IncidentEngine {
     if (this.incidents.filter((i) => i.resolvedTick === undefined).length >= 2) return;
     const hour = timeOfDay(minuteOfTick(w.tick)) / 60;
     const working = hour >= 7 && hour < 19;
-    const rate = FREE_PLAY_RATE[this.intensity] * (working ? 1 : 0.25);
+    const rate = FREE_PLAY_RATE[this.intensity] * ACTORS[this.actor].pace * (working ? 1 : 0.25);
     if (noise(this.seed ^ 0x0f00d, w.tick) >= rate / TICKS_PER_HOUR) return;
     // Weight incidents by how exposed the business actually is.
     const nodes = this.topology.nodes.filter((n) => w.usable(n.id));
@@ -840,7 +847,7 @@ export class IncidentEngine {
     const noMfa = nodes.some((n) => PERSON.has(n.kind) && w.roleOf(n.id) !== undefined && !w.mfa(w.roleOf(n.id)!));
     const weakCams = nodes.some((n) => n.kind === "camera" && n.tags.includes("default-credentials"));
     const has = (s: string) => nodes.some((n) => n.services.includes(s));
-    const weights: Record<IncidentKind, number> = {
+    const exposure: Record<IncidentKind, number> = {
       ransomware: 1 + (weakCams ? 1.5 : 0) + (noMfa ? 1 : 0),
       phishing: noMfa ? 3 : 1,
       "edge-exploit": exploitedEdge ? 3 : 0.3,
@@ -856,6 +863,7 @@ export class IncidentEngine {
       "ot-ransomware": nodes.some((n) => OT.has(n.kind)) ? 1 + (weakCams ? 1 : 0) : 0,
       "invoice-fraud": 0.8,
     };
+    const weights = actorWeights(exposure, this.actor);
     const total = INCIDENT_KINDS.reduce((s, k) => s + weights[k], 0);
     let roll = noise(this.seed ^ 0xbeef, w.tick) * total;
     this.start(INCIDENT_KINDS.find((k) => (roll -= weights[k]) < 0) ?? "isp-outage", w);
@@ -886,6 +894,7 @@ export class IncidentEngine {
     return {
       mode: this.mode,
       intensity: this.intensity,
+      actor: { id: this.actor, name: ACTORS[this.actor].name },
       scenario: this.scenario
         ? {
             id: this.scenario.id, name: this.scenario.name, description: this.scenario.description,
@@ -991,7 +1000,7 @@ export class IncidentEngine {
   exportState(): IncidentState {
     return JSON.parse(
       JSON.stringify({
-        mode: this.mode, intensity: this.intensity, scenario: this.scenario, finished: this.finished, endTick: this.endTick,
+        mode: this.mode, intensity: this.intensity, ...(this.actor === DEFAULT_ACTOR ? {} : { actor: this.actor }), scenario: this.scenario, finished: this.finished, endTick: this.endTick,
         incidents: this.incidents, seq: this.seq, schedule: this.schedule, decoys: Object.fromEntries(this.decoys),
         lost: this.lost, spend: this.spend, costPerMinute: this.costPerMinute,
       }),
@@ -1002,6 +1011,7 @@ export class IncidentEngine {
     const c = JSON.parse(JSON.stringify(s)) as IncidentState;
     this.mode = c.mode;
     this.intensity = c.intensity;
+    this.actor = c.actor !== undefined && c.actor in ACTORS ? c.actor : DEFAULT_ACTOR;
     this.scenario = c.scenario;
     this.finished = c.finished;
     this.endTick = c.endTick;

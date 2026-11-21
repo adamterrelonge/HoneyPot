@@ -724,7 +724,12 @@ criteria pass and a diary entry exists.
   containment (detected → contained) and eradication & recovery (contained → resolved), derived from the
   times each incident already records; no simulation change. MTTD, MTTC and MTTR tiles in the report
   sheet and rows in the Markdown summary; a proportional phase bar per incident, labelled in text.
-- To do: threat actor profiles, an attack-graph planner (attackers search the network for a route and
+- **Threat actors** (`engine/incidents/actors.ts`) ✅: free play takes an adversary (Mixed, Opportunists,
+  Ransomware gang, Fraud ring, Insider). Each multiplies the exposure weights of the attacks it favours and
+  sets a pace; operational incidents are never changed. "Mixed" is the identity and is not written to saves,
+  so older saves keep their hash and existing replays are unchanged. The Play sheet picker shows each
+  actor's blurb and typical ATT&CK techniques; the report names the adversary.
+- To do: an attack-graph planner (attackers search the network for a route and
   react to defences), report card export (PNG/PDF).
 
 ---

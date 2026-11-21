@@ -4,6 +4,7 @@
  * so (seed + topology + log) fully reproduces a session.
  */
 import { z } from "zod";
+import { ACTOR_IDS } from "../incidents/actors";
 import { INCIDENT_KINDS } from "../incidents/catalog";
 import { ACCESS_LEVELS, ROLES, RuleSchema } from "../model";
 
@@ -43,7 +44,7 @@ export const CommandSchema = z.discriminatedUnion("type", [
   // Phase 6: incidents, scenarios and decoys
   z.object({
     type: z.literal("game.start"), mode: z.enum(["free", "scenario"]), scenarioId: z.string().optional(),
-    intensity: z.enum(["calm", "normal", "intense"]).optional(),
+    intensity: z.enum(["calm", "normal", "intense"]).optional(), actor: z.enum(ACTOR_IDS).optional(),
   }),
   z.object({ type: z.literal("game.stop") }),
   z.object({ type: z.literal("incident.start"), kind: z.enum(INCIDENT_KINDS), target: z.string().optional() }),

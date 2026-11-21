@@ -2,10 +2,11 @@
  * Phase 6 UI: play sheet (free play, scenarios, decoys), score HUD, incidents panel and the
  * after-action report. Reads snapshots; acts only through commands.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { INDUSTRY_INFO } from "../engine/gen/spec";
 import { scenariosFor, type Intensity } from "../engine/incidents/catalog";
 import type { GameView, IncidentView } from "../engine/incidents/engine";
+import { ACTORS, ACTOR_IDS, signatureTechniques, type ActorId } from "../engine/incidents/actors";
 import { ATTACK, attackUrl } from "../engine/incidents/attack";
 import { PHASE_LABEL, formatSpan, phaseSpans, responseMetrics, type PhaseId } from "../engine/incidents/phases";
 import { reportMarkdown } from "../engine/incidents/report";
@@ -79,11 +80,12 @@ export function PlaySheet() {
   const recommended = useOnboarding((s) => s.recommended);
   const suggested = useOnboarding((s) => s.intensity);
   const bests = useProgress((s) => s.bests);
+  const [actor, setActor] = useState<ActorId>("mixed");
   if (!open || !g) return null;
   const scenarios = scenariosFor(topology.meta.profile?.industry).sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended));
   const done = scenarios.filter((s) => bests[s.id]).length;
   const playing = g.mode !== "sandbox" && !g.finished;
-  const start = (cmd: { mode: "free"; intensity: Intensity } | { mode: "scenario"; scenarioId: string }) => {
+  const start = (cmd: { mode: "free"; intensity: Intensity; actor: ActorId } | { mode: "scenario"; scenarioId: string }) => {
     void sim.dispatch({ type: "game.start", ...cmd });
     sim.setRunning(true);
     setOpen(false);
@@ -106,12 +108,35 @@ export function PlaySheet() {
         </div>
       )}
       <H>Free play</H>
+      <fieldset className={`${card} mb-3`}>
+        <legend className="sr-only">Adversary</legend>
+        <p className="mb-2 text-[12px] font-semibold">Who's coming for you?</p>
+        <div className="flex flex-wrap gap-1.5">
+          {ACTOR_IDS.map((id) => (
+            <label
+              key={id}
+              className={`cursor-pointer rounded-full px-3 py-1 text-[12px] font-medium has-[:focus-visible]:shadow-[0_0_0_2px_var(--color-accent)] ${
+                actor === id ? "bg-accent text-white" : "bg-fill/[0.05] text-ink-2 hover:bg-fill/[0.08]"
+              }`}
+            >
+              <input type="radio" name="actor" value={id} checked={actor === id} onChange={() => setActor(id)} className="sr-only" />
+              {ACTORS[id].name}
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-[12px] leading-snug text-ink-2">{ACTORS[actor].blurb}</p>
+        {signatureTechniques(actor).length > 0 && (
+          <p className="mt-1 text-[11px] text-ink-3">
+            Typical techniques: {signatureTechniques(actor).map((t) => `${t.id} ${t.name}`).join(" · ")}
+          </p>
+        )}
+      </fieldset>
       <div className={`${card} flex flex-wrap items-center gap-3`}>
         <span className="flex-1 text-[13px] leading-snug">
           Incidents arrive at random, more often where you're exposed (exploited CVEs, no MFA, default passwords).
         </span>
         {(["calm", "normal", "intense"] as const).map((i) => (
-          <button key={i} className={primary} onClick={() => start({ mode: "free", intensity: i })}>
+          <button key={i} className={primary} onClick={() => start({ mode: "free", intensity: i, actor })}>
             {i[0]!.toUpperCase() + i.slice(1)}
             {i === suggested && <span className="ml-1 font-normal opacity-80">(suggested)</span>}
           </button>
