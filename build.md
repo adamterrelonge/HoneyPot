@@ -433,7 +433,7 @@ standard = one or two behind, generous = latest. The generator ships firmware th
     payments £1.50, production £3, imaging £0.60, portal £0.10. Degraded service counts half.
   - Firmware installs cost £150 now or £250 tonight, plus the action costs above.
   - Budget = £400 / £1,200 / £3,000 per employee (lean / standard / generous).
-- **Score** = 1000 − 450·lost/budget − 250·spend/budget − 0.08·MB stolen − 1.5·average minutes to contain.
+- **Score** = 1000 − 450·lost/budget − 250·spend/budget − min(350, 120·log10(1 + MB stolen/50)) − 1.5·average minutes to contain (clocks stop when the game ends). Phase 14 replaced the old 0.08·MB, which let any long theft floor the score.
   Each objective passed or failed adds or subtracts 50. Grades: A ≥ 850, B ≥ 700, C ≥ 550, D ≥ 400, F below.
 - **After-action report:** every incident, including undetected ones, with its timeline, cost and lessons,
   plus objectives and the grade.

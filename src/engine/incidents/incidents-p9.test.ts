@@ -10,6 +10,7 @@ import { INDUSTRIES, ROLES, parseTopology, type Industry, type Topology } from "
 import { MINUTES_PER_TICK, START_MINUTE } from "../sim/clock";
 import { Simulation } from "../sim/simulation";
 import { RESTORE, SCENARIOS, ScenarioSchema, scenariosFor } from "./catalog";
+import { dataPenalty } from "./engine";
 
 const MORNING = (9.5 * 60 - START_MINUTE) / MINUTES_PER_TICK;
 const HOUR = 60 / MINUTES_PER_TICK;
@@ -219,6 +220,15 @@ describe("after a game", () => {
     sim.advance(3 * HOUR);
     expect({ data: game(sim).dataMB, lost: game(sim).lost, score: game(sim).score }).toEqual(final);
     expect(sim.snapshot().flows.some((f) => f.app === "exfil")).toBe(false);
+  });
+
+  it("stolen data costs score on a capped log scale, so one long theft can't zero the score alone", () => {
+    expect(dataPenalty(0)).toBe(0);
+    expect(dataPenalty(100)).toBeCloseTo(57.3, 0);
+    expect(dataPenalty(1000)).toBeCloseTo(158.7, 0);
+    expect(dataPenalty(10_000)).toBeCloseTo(276.4, 0);
+    expect(dataPenalty(124_500)).toBe(350);
+    for (const mb of [1, 10, 100, 1000]) expect(dataPenalty(mb * 2)).toBeGreaterThan(dataPenalty(mb));
   });
 });
 

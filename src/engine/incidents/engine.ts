@@ -41,6 +41,12 @@ const OT = new Set<NodeKind>(["plc", "medical"]);
 /** Incidents driven by an adversary (they stop when a game ends; faults run their course). */
 const ATTACKS = new Set<IncidentKind>(["ransomware", "phishing", "edge-exploit", "insider", "supply-chain", "credential-stuffing", "ot-ransomware", "invoice-fraud"]);
 /** The service an attacker uses to reach a target (OT devices speak their own protocols). */
+/**
+ * Score lost to stolen data: logarithmic and capped, so the first leak hurts most and a long theft can't
+ * sink the whole score on its own (100 MB ≈ 57, 1 GB ≈ 159, 10 GB ≈ 276, cap 350).
+ */
+export const dataPenalty = (mb: number) => Math.min(350, 120 * Math.log10(1 + Math.max(0, mb) / 50));
+
 const reachService = (n: NetNode) => (n.kind === "plc" ? "production" : n.kind === "medical" ? "imaging" : "files");
 
 /** What the incident engine needs to know about the world (implemented by Simulation). */
@@ -134,6 +140,8 @@ export interface IncidentState {
   soc?: SocState;
   scenario: Scenario | null;
   finished: boolean;
+  /** Tick the game ended; containment clocks stop there (omitted while playing). */
+  finishedTick?: number;
   endTick?: number;
   incidents: Incident[];
   seq: number;
@@ -235,6 +243,7 @@ export class IncidentEngine {
   actor: ActorId = DEFAULT_ACTOR;
   scenario: Scenario | null = null;
   finished = false;
+  private finishedTick?: number;
   readonly budget: number;
   private endTick?: number;
   private incidents: Incident[] = [];
@@ -348,6 +357,7 @@ export class IncidentEngine {
         this.actor = cmd.mode === "free" ? (cmd.actor ?? DEFAULT_ACTOR) : DEFAULT_ACTOR;
         this.scenario = scenario ?? null;
         this.finished = false;
+        this.finishedTick = undefined;
         this.incidents = [];
         this.lost = 0;
         this.spend = 0;
@@ -365,6 +375,7 @@ export class IncidentEngine {
       case "game.stop": {
         if (!this.playing) return { ok: true, noop: true };
         this.finished = true;
+        this.finishedTick = w.tick;
         return { ok: true, noop: false, event: { severity: "info", text: "Game over: the after-action report is ready" } };
       }
       case "incident.start": {
@@ -723,6 +734,7 @@ export class IncidentEngine {
     if (this.playing) for (const s of this.schedule) if (s.tick === tick) this.start(s.kind, w);
     if (this.playing && this.endTick !== undefined && tick >= this.endTick) {
       this.finished = true;
+      this.finishedTick = tick;
       events.push({ severity: "info", text: `Scenario over: ${this.scenario?.name}. The after-action report is ready` });
     }
     if (this.mode === "free" && this.playing) this.maybeSpawn(w);
@@ -1195,7 +1207,7 @@ export class IncidentEngine {
   private containMinutes(tick: number): number[] {
     return this.incidents
       .filter((i) => i.detectedTick !== undefined && !i.failed)
-      .map((i) => ((i.containedTick ?? tick) - i.detectedTick!) * MINUTES_PER_TICK);
+      .map((i) => ((i.containedTick ?? Math.min(tick, this.finishedTick ?? tick)) - i.detectedTick!) * MINUTES_PER_TICK);
   }
 
   private objectives(tick: number): ObjectiveView[] {
@@ -1216,7 +1228,7 @@ export class IncidentEngine {
     const contain = this.containMinutes(tick);
     const avgContain = contain.length ? contain.reduce((s, m) => s + m, 0) / contain.length : 0;
     const raw =
-      1000 - 450 * (this.lost / this.budget) - 250 * (this.spend / this.budget) - 0.08 * dataMB - 1.5 * avgContain +
+      1000 - 450 * (this.lost / this.budget) - 250 * (this.spend / this.budget) - dataPenalty(dataMB) - 1.5 * avgContain +
       50 * objectives.filter((o) => o.passed).length - 50 * objectives.filter((o) => !o.passed).length;
     const score = Math.round(Math.min(1000, Math.max(0, raw)));
     const grade = score >= 850 ? "A" : score >= 700 ? "B" : score >= 550 ? "C" : score >= 400 ? "D" : "F";
@@ -1238,7 +1250,7 @@ export class IncidentEngine {
   exportState(): IncidentState {
     return JSON.parse(
       JSON.stringify({
-        mode: this.mode, intensity: this.intensity, ...(this.actor === DEFAULT_ACTOR ? {} : { actor: this.actor }), scenario: this.scenario, finished: this.finished, endTick: this.endTick,
+        mode: this.mode, intensity: this.intensity, ...(this.actor === DEFAULT_ACTOR ? {} : { actor: this.actor }), scenario: this.scenario, finished: this.finished, ...(this.finishedTick === undefined ? {} : { finishedTick: this.finishedTick }), endTick: this.endTick,
         incidents: this.incidents, seq: this.seq, schedule: this.schedule, decoys: Object.fromEntries(this.decoys),
         lost: this.lost, spend: this.spend, costPerMinute: this.costPerMinute,
         ...(isEmptySoc(this.soc.state) ? {} : { soc: this.soc.exportState() }),
@@ -1253,6 +1265,7 @@ export class IncidentEngine {
     this.actor = c.actor !== undefined && c.actor in ACTORS ? c.actor : DEFAULT_ACTOR;
     this.scenario = c.scenario;
     this.finished = c.finished;
+    this.finishedTick = c.finishedTick;
     this.endTick = c.endTick;
     this.incidents = c.incidents;
     this.seq = c.seq;
