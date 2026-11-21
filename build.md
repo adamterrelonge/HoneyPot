@@ -714,7 +714,7 @@ criteria pass and a diary entry exists.
   visitors see no questions; every recommended scenario exists and fits the sample business (tested);
   Lighthouse accessibility stays at 100.
 
-### Phase 12 — Speak the industry's language 🚧 (started 2026-11-21)
+### Phase 12 — Speak the industry's language ✅ (2026-11-21)
 - **MITRE ATT&CK** (`engine/incidents/attack.ts`) ✅: techniques per adversarial incident kind, in attack
   order; operational incidents (outages, expired certificates, mistakes) have none. 13 IDs checked against
   attack.mitre.org on 2026-11-21 and pinned with their official names in `attack.test.ts`; T1656
@@ -738,7 +738,11 @@ criteria pass and a diary entry exists.
   know decoys, so a honeypot on its route still catches it. Timeline notes: "Planned a route to …",
   "Next target …", "Rerouted to …". It holds off encrypting until it holds a goal (6-move cap). Scenarios
   and other actors keep the scripted spread; `planned`/`route` are saved only when set.
-- To do: report card export (PNG/PDF).
+- **Report card** (`ui/report-card.ts`) ✅: a one-page 1200×800 summary (grade, score, losses, spend,
+  data stolen, incidents, MTTD/MTTC/MTTR, objectives, observed ATT&CK techniques, top three lessons),
+  built as SVG by a pure function and rasterised to PNG at 2× with a canvas; no library. Always light, so
+  it prints and shares well. "Report card (PNG)" in the after-action report. PDF left out: the PNG covers
+  showing and attaching, and PDF would need a library or a print layout.
 
 ---
 

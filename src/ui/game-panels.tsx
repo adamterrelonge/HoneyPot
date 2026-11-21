@@ -13,6 +13,7 @@ import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
 import { useOnboarding } from "../state/onboarding";
+import { downloadReportCard, reportCardSvg } from "./report-card";
 import { recordRun, useProgress } from "../state/progress";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
@@ -391,6 +392,22 @@ function Techniques({ kind }: { kind: IncidentView["kind"] }) {
 
 // ── After-action report ──────────────────────────────────────────────────────
 
+/** Download the one-page report card as PNG (src/ui/report-card.ts). */
+async function exportCard(g: GameView): Promise<void> {
+  const meta = useApp.getState().topology.meta;
+  const clock = formatClock(useSim.getState().snap?.minute ?? 0);
+  const now = new Date();
+  const svg = reportCardSvg(g, { business: meta.name, when: `${clock.day} ${clock.time}`, date: now.toLocaleDateString("en-GB", { dateStyle: "medium" }) });
+  const slug = meta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
+  const name = `${slug}-report-card-${now.toISOString().slice(0, 10)}.png`;
+  try {
+    await downloadReportCard(svg, name);
+    sim.notify(`Report card saved: ${name}`);
+  } catch (e) {
+    useSim.setState({ error: `Couldn't create the report card: ${e instanceof Error ? e.message : String(e)}` });
+  }
+}
+
 /** Download the report as Markdown, named after the business and the date. */
 function exportReport(g: GameView): void {
   const meta = useApp.getState().topology.meta;
@@ -431,6 +448,9 @@ export function ReportSheet() {
         <p className="flex-1 text-[12px] text-ink-2">
           {g.finished ? "Final results." : "The game is still running: these are the results so far."}
         </p>
+        <button className={primary} onClick={() => void exportCard(g)}>
+          Report card (PNG)
+        </button>
         <button className={primary} onClick={() => exportReport(g)}>
           Export .md
         </button>
