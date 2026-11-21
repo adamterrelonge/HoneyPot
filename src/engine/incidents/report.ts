@@ -4,6 +4,7 @@
  * ones never detected) with its timeline and lessons.
  */
 import { ATTACK } from "./attack";
+import { PHASE_LABEL, formatSpan, phaseSpans, responseMetrics } from "./phases";
 import { formatClock } from "../sim/clock";
 import type { GameView, IncidentView } from "./engine";
 
@@ -41,7 +42,11 @@ export function reportMarkdown(g: GameView, info: ReportInfo): string {
   out.push(`| Spent on response | ${money(g.spend)} of a ${money(g.budget)} budget |`);
   out.push(`| Data stolen | ${(g.dataMB / 1000).toFixed(1)} GB |`);
   const undetected = g.incidents.filter((i) => i.status === "undetected").length;
-  out.push(`| Incidents | ${g.incidents.length}${undetected ? ` (${undetected} never detected)` : ""} |`, "");
+  out.push(`| Incidents | ${g.incidents.length}${undetected ? ` (${undetected} never detected)` : ""} |`);
+  const m = responseMetrics(g.incidents);
+  out.push(`| Mean time to detect (MTTD) | ${formatSpan(m.mttd)} |`);
+  out.push(`| Mean time to contain (MTTC) | ${formatSpan(m.mttc)} |`);
+  out.push(`| Mean time to resolve (MTTR) | ${formatSpan(m.mttr)} |`, "");
 
   if (g.objectives.length) {
     out.push("## Objectives", "");
@@ -62,6 +67,10 @@ export function reportMarkdown(g: GameView, info: ReportInfo): string {
     if (i.footholds.length) out.push(`**Attacker footholds:** ${i.footholds.map(cell).join(", ")}`, "");
     if (i.encrypted.length) out.push(`**Encrypted:** ${i.encrypted.map(cell).join(", ")}`, "");
     if (i.dataMB > 0) out.push(`**Data stolen:** ${(i.dataMB / 1000).toFixed(2)} GB`, "");
+    const phases = phaseSpans(i, info.minute)
+      .map((p) => `${PHASE_LABEL[p.phase]} ${formatSpan(p.minutes)}${p.done ? "" : " (in progress)"}`)
+      .join(" → ");
+    out.push(`**Response phases:** ${phases}`, "");
     const techniques = ATTACK[i.kind];
     out.push(
       techniques.length

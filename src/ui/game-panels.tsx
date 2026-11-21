@@ -7,6 +7,7 @@ import { INDUSTRY_INFO } from "../engine/gen/spec";
 import { scenariosFor, type Intensity } from "../engine/incidents/catalog";
 import type { GameView, IncidentView } from "../engine/incidents/engine";
 import { ATTACK, attackUrl } from "../engine/incidents/attack";
+import { PHASE_LABEL, formatSpan, phaseSpans, responseMetrics, type PhaseId } from "../engine/incidents/phases";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
@@ -320,6 +321,26 @@ export function IncidentsPanel({ width }: { width: number }) {
   );
 }
 
+const PHASE_COLOUR: Record<PhaseId, string> = { detect: "bg-warn", contain: "bg-accent", recover: "bg-ok" };
+
+/** Time spent in each response phase, as a proportional bar with labels (text carries the meaning, not colour). */
+function PhaseBar({ incident, now }: { incident: IncidentView; now: number }) {
+  const spans = phaseSpans(incident, now);
+  const total = spans.reduce((a, s) => a + s.minutes, 0) || 1;
+  return (
+    <div className="mt-2">
+      <div className="flex h-1.5 overflow-hidden rounded-full bg-fill/[0.06]" aria-hidden="true">
+        {spans.map((s) => (
+          <span key={s.phase} className={`${PHASE_COLOUR[s.phase]} ${s.done ? "" : "opacity-50"}`} style={{ width: `${(s.minutes / total) * 100}%` }} />
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] text-ink-3">
+        {spans.map((s) => `${PHASE_LABEL[s.phase]} ${formatSpan(s.minutes)}${s.done ? "" : " (ongoing)"}`).join(" → ")}
+      </p>
+    </div>
+  );
+}
+
 /** MITRE ATT&CK techniques for an incident kind, each linking to its page on attack.mitre.org. */
 function Techniques({ kind }: { kind: IncidentView["kind"] }) {
   const techniques = ATTACK[kind];
@@ -369,7 +390,9 @@ export function ReportSheet() {
   const open = useApp((s) => s.reportOpen);
   const setOpen = useApp((s) => s.setReportOpen);
   const g = useSim((s) => (open ? s.snap?.game : undefined));
+  const minute = useSim((s) => (open ? (s.snap?.minute ?? 0) : 0));
   if (!open || !g) return null;
+  const metrics = responseMetrics(g.incidents);
   const tiles: [string, string, string][] = [
     ["Score", `${g.score}`, `Grade ${g.grade}`],
     ["Lost", money(g.lost), "idle staff, lost sales"],
@@ -393,6 +416,22 @@ export function ReportSheet() {
             <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3">{k}</p>
             <p className={`text-[20px] font-semibold tabular-nums ${k === "Score" ? GRADE[g.grade] : ""}`}>{v}</p>
             <p className="text-[11px] text-ink-3">{sub}</p>
+          </div>
+        ))}
+      </div>
+      <H>Response times</H>
+      <div className="grid grid-cols-3 gap-3">
+        {([
+          ["MTTD", "Mean time to detect", metrics.mttd],
+          ["MTTC", "Mean time to contain", metrics.mttc],
+          ["MTTR", "Mean time to resolve", metrics.mttr],
+        ] as const).map(([k, label, v]) => (
+          <div key={k} className={card}>
+            <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3">
+              <abbr title={label} className="no-underline">{k}</abbr>
+            </p>
+            <p className="text-[20px] font-semibold tabular-nums">{formatSpan(v)}</p>
+            <p className="text-[11px] text-ink-3">{label.toLowerCase()}</p>
           </div>
         ))}
       </div>
@@ -421,6 +460,7 @@ export function ReportSheet() {
               Started {when(i.startedMinute)} · detected {when(i.detectedMinute)} · contained {when(i.containedMinute)} · resolved{" "}
               {when(i.resolvedMinute)} · cost {money(i.cost)}
             </p>
+            <PhaseBar incident={i} now={minute} />
             <Techniques kind={i.kind} />
             <ol className="mt-2 space-y-0.5 border-l-2 border-hairline pl-3 text-[12px]">
               {i.timeline.map((t, k) => (

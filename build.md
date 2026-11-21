@@ -714,6 +714,19 @@ criteria pass and a diary entry exists.
   visitors see no questions; every recommended scenario exists and fits the sample business (tested);
   Lighthouse accessibility stays at 100.
 
+### Phase 12 — Speak the industry's language 🚧 (started 2026-11-21)
+- **MITRE ATT&CK** (`engine/incidents/attack.ts`) ✅: techniques per adversarial incident kind, in attack
+  order; operational incidents (outages, expired certificates, mistakes) have none. 13 IDs checked against
+  attack.mitre.org on 2026-11-21 and pinned with their official names in `attack.test.ts`; T1656
+  Impersonation left out (its page could not be verified). Shown as linked chips in the report sheet and
+  as a line per incident in the Markdown report.
+- **Incident response phases** (`engine/incidents/phases.ts`) ✅: detection (start → detected),
+  containment (detected → contained) and eradication & recovery (contained → resolved), derived from the
+  times each incident already records; no simulation change. MTTD, MTTC and MTTR tiles in the report
+  sheet and rows in the Markdown summary; a proportional phase bar per incident, labelled in text.
+- To do: threat actor profiles, an attack-graph planner (attackers search the network for a route and
+  react to defences), report card export (PNG/PDF).
+
 ---
 
 ## 9. Conventions
