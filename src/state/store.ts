@@ -47,6 +47,9 @@ interface AppState {
   socOpen: boolean;
   setSocOpen: (open: boolean) => void;
   setReportOpen: (open: boolean) => void;
+  /** Phase 14: the Cyber Essentials gap report. */
+  complianceOpen: boolean;
+  setComplianceOpen: (open: boolean) => void;
   /** Colour devices on the map by their worst known vulnerability. */
   riskLens: boolean;
   setVulnsOpen: (open: boolean) => void;
@@ -112,6 +115,8 @@ export const useApp = create<AppState>()((set, get) => ({
   socOpen: false,
   setSocOpen: (socOpen) => set(socOpen ? { socOpen, incidentsOpen: false, selectedId: null } : { socOpen }),
   setReportOpen: (reportOpen) => set({ reportOpen }),
+  complianceOpen: false,
+  setComplianceOpen: (complianceOpen) => set({ complianceOpen }),
   setVulnsOpen: (vulnsOpen) => set({ vulnsOpen }),
   setRiskLens: (riskLens) => set({ riskLens }),
 
@@ -136,7 +141,7 @@ export const useApp = create<AppState>()((set, get) => ({
     set({
       topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
       selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false, playOpen: false,
-      incidentsOpen: false, socOpen: false, reportOpen: false, savesOpen: false,
+      incidentsOpen: false, socOpen: false, reportOpen: false, savesOpen: false, complianceOpen: false,
     }),
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),
   startTrace: (source = null) => set({ trace: { source, target: null, service: null, result: null }, selectedId: null }),

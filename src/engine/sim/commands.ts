@@ -23,6 +23,8 @@ export const CommandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("policy.removeRule"), ruleId: z.string().min(1) }),
   /** "Disable access" for one device (or group): a deny-everything rule at the top of the policy. */
   z.object({ type: z.literal("node.setAccess"), nodeId: z.string().min(1), blocked: z.boolean() }),
+  /** Phase 14: replace a device's default password (`changed: false` is undo). Cyber Essentials: secure configuration. */
+  z.object({ type: z.literal("node.setPassword"), nodeId: z.string().min(1), changed: z.boolean() }),
   // Phase 4: identity
   z.object({ type: z.literal("node.setRole"), nodeId: z.string().min(1), role: z.enum(ROLES) }),
   z.object({

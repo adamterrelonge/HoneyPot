@@ -133,6 +133,8 @@ export interface Snapshot {
   policy: { rules: Rule[]; blocking: Record<string, number> };
   /** Current role definitions and every person-device's role. */
   identity: { roles: Record<Role, RoleDef>; nodeRoles: Record<string, Role> };
+  /** Devices still on their vendor's default password (Phase 14). */
+  defaultPasswords: string[];
   /** Firmware/software versions, exposure, condition and age per device (Phase 5). */
   devices: Record<string, DeviceSim>;
   failuresEnabled: boolean;

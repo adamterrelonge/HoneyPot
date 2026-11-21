@@ -11,6 +11,7 @@ import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { onboarding } from "./state/onboarding";
 import { Onboarding } from "./ui/onboarding";
 import { AlertsButton, SocPanel } from "./ui/soc-panels";
+import { ComplianceButton, ComplianceSheet } from "./ui/compliance-panels";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
@@ -85,6 +86,7 @@ export function App() {
       <SavesSheet />
       <PolicySheet />
       <VulnerabilitiesSheet />
+      <ComplianceSheet />
       <PlaySheet />
       <ReportSheet />
       <Wizard />
@@ -158,6 +160,7 @@ function TopBar() {
         Policy
       </button>
       {vulns}
+      <ComplianceButton />
     </>
   );
 

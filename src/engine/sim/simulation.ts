@@ -74,6 +74,8 @@ export interface SimState {
   rules: Rule[];
   roles: Record<Role, RoleDef>;
   nodeRole: Record<string, Role>;
+  /** Phase 14: devices whose default password was changed; absent when none (older saves hash the same). */
+  passwordChanged?: string[];
   level: number[];
   burst: number[];
   log: LoggedCommand[];
@@ -135,6 +137,7 @@ export class Simulation {
   private rules: Rule[];
   private roles: Record<Role, RoleDef>;
   private readonly nodeRole = new Map<string, Role>();
+  private readonly passwordChanged = new Set<string>();
   private readonly zoneOf = new Map<string, Zone>();
   private blocking: Record<string, number> = {};
   /** Firmware, failures and repairs (Phase 5). */
@@ -265,6 +268,7 @@ export class Simulation {
       accessBlocked: (id) => this.rules.some((r) => r.id === blockRuleId(id) && r.enabled),
       canReach: (a, b, service) => this.usable(a) && this.usable(b) && this.route(a, b) !== null && this.decision(a, b, service).allowed,
       roleOf: (id) => this.nodeRole.get(id),
+      defaultPassword: (id) => this.defaultPassword(id),
       mfa: (role) => this.roles[role].mfa,
       exposed: (id) => this.lifecycle.advisories(id),
       forceUpdate: (id) => {
@@ -276,6 +280,11 @@ export class Simulation {
       apps: this.appHealth,
       flows: this.flows,
     };
+  }
+
+  /** Still on the vendor's default password. */
+  defaultPassword(id: string): boolean {
+    return !this.passwordChanged.has(id) && (this.nodes.get(id)?.tags.includes("default-credentials") ?? false);
   }
 
   /** Reachability or device usability changed: recompute paths lazily. */
@@ -358,6 +367,7 @@ export class Simulation {
         ) as Record<Role, RoleDef>,
         nodeRoles: Object.fromEntries(this.nodeRole),
       },
+      defaultPasswords: this.topology.nodes.filter((n) => this.defaultPassword(n.id)).map((n) => n.id),
       devices: this.lifecycle.snapshot(),
       failuresEnabled: this.lifecycle.failuresEnabled,
       game: this.incidents.view(this._tick, { usable: (id) => this.usable(id) }),
@@ -382,6 +392,7 @@ export class Simulation {
       rules: this.rules,
       roles: this.roles,
       nodeRole: Object.fromEntries(this.nodeRole),
+      ...(this.passwordChanged.size ? { passwordChanged: [...this.passwordChanged].sort() } : {}),
       level: Array.from(this.level),
       burst: Array.from(this.burst),
       log: this.log,
@@ -419,6 +430,8 @@ export class Simulation {
       const role = s.nodeRole[id];
       if (role && role in ROLE_INFO) this.nodeRole.set(id, role);
     }
+    this.passwordChanged.clear();
+    for (const id of s.passwordChanged ?? []) if (this.nodes.has(id)) this.passwordChanged.add(id);
     this.level.set(s.level);
     this.burst.set(s.burst);
     this.log = s.log;
@@ -449,6 +462,7 @@ export class Simulation {
     for (const f of this.flows) parts.push(`${f.id}:${f.status}:${f.throughputMbps.toFixed(4)}:${f.latencyMs.toFixed(3)}`);
     parts.push(`e${this.eventSeq}`);
     parts.push(JSON.stringify(this.rules), JSON.stringify(this.roles), JSON.stringify([...this.nodeRole]));
+    if (this.passwordChanged.size) parts.push(`pw:${[...this.passwordChanged].sort().join(",")}`);
     parts.push(this.lifecycle.hashPart(), this.incidents.hashPart());
     return fnv1a(parts.join("|")).toString(16).padStart(8, "0");
   }
@@ -494,6 +508,8 @@ export class Simulation {
         const i = this.rules.findIndex((x) => x.id === cmd.ruleId);
         return i < 0 ? null : { type: "policy.addRule", rule: { ...this.rules[i]!, services: [...this.rules[i]!.services] }, index: i };
       }
+      case "node.setPassword":
+        return { ...cmd, changed: this.passwordChanged.has(cmd.nodeId) };
       case "node.setAccess":
         return { ...cmd, blocked: this.rules.some((r) => r.id === blockRuleId(cmd.nodeId)) };
       case "node.setRole": {
@@ -623,6 +639,19 @@ export class Simulation {
         return {
           ok: true, noop: false, subject: n.id, severity: cmd.blocked ? "warn" : "info",
           text: cmd.blocked ? `Network access disabled for ${n.label}` : `Network access restored for ${n.label}`,
+        };
+      }
+
+      case "node.setPassword": {
+        const n = this.nodes.get(cmd.nodeId);
+        if (!n) return { ok: false, error: `Unknown device "${cmd.nodeId}"` };
+        if (!n.tags.includes("default-credentials")) return { ok: false, error: `${n.label} doesn't use a default password` };
+        if (this.passwordChanged.has(n.id) === cmd.changed) return { ok: true, noop: true };
+        if (cmd.changed) this.passwordChanged.add(n.id);
+        else this.passwordChanged.delete(n.id);
+        return {
+          ok: true, noop: false, subject: n.id, severity: cmd.changed ? "info" : "warn",
+          text: cmd.changed ? `Default password replaced on ${n.label}` : `${n.label} is back on its default password`,
         };
       }
 

@@ -307,6 +307,7 @@ function Actions({ node, live }: { node: NetNode; live: NodeSim | undefined }) {
 function AccessActions({ node }: { node: NetNode }) {
   const blocked = useSim((s) => !!s.snap?.policy.rules.some((r) => r.id === blockRuleId(node.id)));
   const role = useSim((s) => s.snap?.identity.nodeRoles[node.id]);
+  const defaultPassword = useSim((s) => !!s.snap?.defaultPasswords.includes(node.id));
   const startTrace = useApp((s) => s.startTrace);
   const setPolicyOpen = useApp((s) => s.setPolicyOpen);
   const btn =
@@ -327,6 +328,17 @@ function AccessActions({ node }: { node: NetNode }) {
           Trace from here
         </button>
       </div>
+      {defaultPassword && (
+        <div className="mb-3 flex items-center gap-2 rounded-[10px] bg-warn/10 px-3 py-2 text-[12px] text-warn-ink">
+          <span className="flex-1">Still on the vendor's default password: anyone can look it up.</span>
+          <button
+            className="rounded-[8px] bg-accent px-2.5 py-1 text-[12px] font-semibold text-white hover:bg-accent-hover"
+            onClick={() => void sim.dispatch({ type: "node.setPassword", nodeId: node.id, changed: true })}
+          >
+            Change password
+          </button>
+        </div>
+      )}
       {node.kind === "firewall" && (
         <button
           className={`${btn} mb-3 w-full bg-surface/80 text-ink hover:bg-surface`}

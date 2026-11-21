@@ -56,6 +56,8 @@ export interface World {
   accessBlocked(id: string): boolean;
   canReach(from: string, to: string, service: string): boolean;
   roleOf(id: string): Role | undefined;
+  /** Still on the vendor's default password (tagged `default-credentials` and not changed since). */
+  defaultPassword(id: string): boolean;
   mfa(role: Role): boolean;
   exposed(id: string): Advisory[];
   /** Start a failing automatic update on a device; false if it has no updatable firmware. */
@@ -522,7 +524,7 @@ export class IncidentEngine {
           fail("There are no production controllers or clinical devices here to hold to ransom");
           break;
         }
-        const cams = nodes.filter((n) => n.kind === "camera" && n.tags.includes("default-credentials"));
+        const cams = nodes.filter((n) => n.kind === "camera" && w.defaultPassword(n.id));
         const routes: [string, NetNode[]][] = [
           ["a camera still on its default password", cams],
           ["a phished account without MFA", nodes.filter(unprotected)],
@@ -1094,7 +1096,7 @@ export class IncidentEngine {
     const nodes = this.topology.nodes.filter((n) => w.usable(n.id));
     const exploitedEdge = nodes.some((n) => EDGE.has(n.kind) && w.exposed(n.id).some((a) => a.exploited));
     const noMfa = nodes.some((n) => PERSON.has(n.kind) && w.roleOf(n.id) !== undefined && !w.mfa(w.roleOf(n.id)!));
-    const weakCams = nodes.some((n) => n.kind === "camera" && n.tags.includes("default-credentials"));
+    const weakCams = nodes.some((n) => n.kind === "camera" && w.defaultPassword(n.id));
     const has = (s: string) => nodes.some((n) => n.services.includes(s));
     const exposure: Record<IncidentKind, number> = {
       ransomware: 1 + (weakCams ? 1.5 : 0) + (noMfa ? 1 : 0),
