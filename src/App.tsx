@@ -13,6 +13,8 @@ import { Onboarding } from "./ui/onboarding";
 import { AlertsButton, SocPanel } from "./ui/soc-panels";
 import { ComplianceButton, ComplianceSheet } from "./ui/compliance-panels";
 import { LessonCard, LessonsButton, LessonsSheet } from "./ui/lessons";
+import { DemoBanner } from "./ui/demo";
+import { DEMO, startDemo } from "./state/demo";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
@@ -40,7 +42,10 @@ export function App() {
   // The canvas is rebuilt with the other palette when the theme changes.
   const theme = usePrefs((s) => s.resolved);
 
-  useEffect(() => bootSimulation(), []);
+  useEffect(() => {
+    bootSimulation();
+    if (DEMO) void startDemo();
+  }, []);
   useRecordProgress();
 
   useEffect(() => {
@@ -90,6 +95,7 @@ export function App() {
       <ComplianceSheet />
       <LessonsSheet />
       <LessonCard />
+      {DEMO && <DemoBanner />}
       <PlaySheet />
       <ReportSheet />
       <Wizard />

@@ -126,10 +126,13 @@ interface OnboardingState {
 
 const stored = load();
 /** `?stress=` performance runs skip onboarding, as they skip the wizard. */
-const stress = typeof location !== "undefined" && new URLSearchParams(location.search).has("stress");
+const params = typeof location !== "undefined" ? new URLSearchParams(location.search) : null;
+const stress = !!params?.has("stress");
+/** `?demo` (Phase 14) goes straight into the reviewer demo. */
+const demo = !!params?.has("demo");
 
 export const useOnboarding = create<OnboardingState>()(() => ({
-  open: stored === null && !stress,
+  open: stored === null && !stress && !demo,
   answers: stored && !stored.skipped ? { goal: stored.goal, familiarity: stored.familiarity, focus: stored.focus } : null,
   recommended: null,
   intensity: null,
@@ -137,7 +140,7 @@ export const useOnboarding = create<OnboardingState>()(() => ({
 }));
 
 /** A returning visitor who chose to design their own business starts in the wizard, as before. */
-export const returningToWizard = stored !== null && !stored.skipped && stored.goal === "simulate";
+export const returningToWizard = !demo && stored !== null && !stored.skipped && stored.goal === "simulate";
 
 export const onboarding = {
   finish(answers: Answers, tour: boolean): Plan {
