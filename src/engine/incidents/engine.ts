@@ -541,6 +541,10 @@ export class IncidentEngine {
           fail("The email gateway quarantined the phishing email that would have let a ransomware crew in");
           break;
         }
+        if (route[0] === "a phished account without MFA" && this.soc.has("awareness-training") && r(41) < 0.4) {
+          fail("A member of staff recognised the phishing email from their training and reported it: the ransomware crew never got in");
+          break;
+        }
         inc.footholds.push(entry.id);
         if (route[0] === "a phished account without MFA") this.soc.attack({ step: "macro", host: entry.id }, id, w.tick);
         else if (route[0] === "an exploited vulnerability") this.soc.attack({ step: "exploit", host: entry.id, cve: w.exposed(entry.id).find((a) => a.exploited)?.cve }, id, w.tick);
@@ -587,6 +591,10 @@ export class IncidentEngine {
           fail("The email gateway flagged the fake invoice (sender failed authentication) and quarantined it");
           break;
         }
+        if (this.soc.has("awareness-training") && r(41) < 0.4) {
+          fail("Finance phoned the supplier on a number they already had before changing bank details: the request was fake");
+          break;
+        }
         const people = nodes.filter((n) => PERSON.has(n.kind) && !n.tags.includes("guest"));
         const finance = byId(target) ?? people.find((n) => w.roleOf(n.id) === "manager") ?? people[0];
         if (!finance) {
@@ -605,6 +613,10 @@ export class IncidentEngine {
       case "phishing": {
         if (this.soc.has("email-gateway") && r(40) < 0.5) {
           fail("The email gateway quarantined the phishing email before anyone clicked");
+          break;
+        }
+        if (this.soc.has("awareness-training") && r(41) < 0.4) {
+          fail("A member of staff spotted the phishing email from their training and reported it instead of clicking");
           break;
         }
         const victim = byId(target) ?? pick(nodes.filter(unprotected), 1, (n) => n.count);

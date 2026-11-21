@@ -26,7 +26,7 @@ export const FALSE_ALARM_COST = 150;
 
 // ── Controls ─────────────────────────────────────────────────────────────────
 
-export const CONTROL_IDS = ["edr", "siem", "email-gateway", "immutable-backups"] as const;
+export const CONTROL_IDS = ["edr", "siem", "email-gateway", "awareness-training", "immutable-backups"] as const;
 export type ControlId = (typeof CONTROL_IDS)[number];
 
 export interface Control {
@@ -55,6 +55,12 @@ export const CONTROLS: Record<ControlId, Control> = {
     blurb: "Scans links and attachments and checks sender authenticity.",
     effect: "Quarantines about half of phishing and fake-invoice emails before anyone sees them.",
     price: (n) => 8 * n,
+  },
+  "awareness-training": {
+    name: "Staff awareness training",
+    blurb: "Short, regular sessions and practice phishing emails, so people know what a scam looks like and how to report one.",
+    effect: "Staff spot and report about 4 in 10 of the scam emails that reach them; finance checks bank-detail changes by phone.",
+    price: (n) => 10 * n,
   },
   "immutable-backups": {
     name: "Immutable backups",

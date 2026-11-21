@@ -166,6 +166,24 @@ describe("security controls", () => {
     expect(quarantined(false)).toBe(0);
     expect(quarantined(true)).toBeGreaterThan(0);
   });
+
+  it("trained staff report some phishing and fake invoices, and nobody does without training", () => {
+    const reported = (trained: boolean, kind: "phishing" | "invoice-fraud", clue: string) => {
+      let n = 0;
+      for (let seed = 1; seed <= 12; seed++) {
+        const sim = fresh(seed);
+        if (trained) sim.dispatch({ type: "control.set", control: "awareness-training", owned: true });
+        sim.dispatch({ type: "game.start", mode: "free", intensity: "calm" });
+        sim.dispatch({ type: "incident.start", kind });
+        if (incident(sim, kind)?.timeline.some((t) => t.text.includes(clue))) n++;
+      }
+      return n;
+    };
+    expect(reported(false, "phishing", "training")).toBe(0);
+    expect(reported(true, "phishing", "training")).toBeGreaterThan(0);
+    expect(reported(false, "invoice-fraud", "phoned the supplier")).toBe(0);
+    expect(reported(true, "invoice-fraud", "phoned the supplier")).toBeGreaterThan(0);
+  });
 });
 
 describe("saves", () => {
