@@ -690,6 +690,30 @@ criteria pass and a diary entry exists.
   - Lighthouse accessibility is 100 at 390 px and 768 px.
   - No horizontal overflow at 320 px in the wizard, top bar, drawers, sheets or inspector.
 
+### Phase 11 — Onboarding & local progress ✅ (2026-11-21)
+- Decisions (workflow doc "Honeypot — Onboarding & Next Features Workflow"): no hosted API; stay free and
+  offline-first; local progress instead of leaderboards; a short, skippable onboarding.
+- **Onboarding** (`ui/onboarding.tsx`, logic in `state/onboarding.ts`): one card, 4–5 steps:
+  welcome → "What brings you here?" (learn fundamentals · understand threats · run a business · reviewing
+  this project · just explore) → familiarity (new · some IT · IT/security) → a topic or threat (learn and
+  threats only) → Ready.
+  - Each topic or threat maps to one scenario that runs on the sample business; reviewers get
+    "Everything, all at once" and a "How it's built" panel linking the repository.
+  - Familiarity sets the suggested free-play intensity (calm · normal · intense) and the tour default.
+  - "Skip to the sandbox" on every step and Esc skip; answers stored in localStorage
+    (`honeypot.onboarding`), so returning visitors aren't asked again. "Your goals" in the top bar reopens it.
+  - The tour checkbox on Ready replaces the separate "Take a quick tour?" pop-up for anyone who answered
+    (`tour.afterBusinessCreated`); skippers still get the old offer.
+  - Start: "Run a business" opens the Create a business wizard; everything else keeps the sample business
+    and opens the tour, or the Play sheet with the recommended scenario first and badged.
+  - Returning visitors who chose "Run a business" still start in the wizard; everyone else starts on the map.
+- **Local progress** (`state/progress.ts`): best score and grade per scenario in localStorage
+  (`honeypot.bests`), recorded when a scenario finishes ("New personal best" notice), shown on each
+  scenario card with a "N of M completed" line.
+- **Done when:** a first-time visitor reaches a running map in at most five presses or one Skip; returning
+  visitors see no questions; every recommended scenario exists and fits the sample business (tested);
+  Lighthouse accessibility stays at 100.
+
 ---
 
 ## 9. Conventions

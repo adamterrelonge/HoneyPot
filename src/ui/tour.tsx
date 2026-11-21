@@ -8,6 +8,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { create } from "zustand";
+import { onboarding } from "../state/onboarding";
 import { usePrefs } from "../state/prefs";
 import { useApp } from "../state/store";
 import { Logo } from "./logo";
@@ -117,6 +118,12 @@ export const tour = {
   /** After a business is created: offer the tour unless the player said "Don't ask again". */
   offer(): void {
     if (!usePrefs.getState().tourDontAsk) useTour.setState({ offer: true, step: null });
+  },
+  /** After a business is created: start or skip the tour if onboarding already asked, else offer it. */
+  afterBusinessCreated(): void {
+    const choice = onboarding.takePendingTour();
+    if (choice === true) tour.start();
+    else if (choice === null) tour.offer();
   },
   start(): void {
     useApp.getState().setWizardOpen(false);

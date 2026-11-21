@@ -9,10 +9,10 @@ import type { GameView, IncidentView } from "../engine/incidents/engine";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
-import { apiEnabled } from "../persist/api";
+import { useOnboarding } from "../state/onboarding";
+import { recordRun, useProgress } from "../state/progress";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
-import { ScenarioTopScores, SubmitScore } from "./online-panels";
 import { useDialogFocus } from "./a11y";
 import { Switch } from "./policy-panels";
 
@@ -74,7 +74,12 @@ export function PlaySheet() {
   const setOpen = useApp((s) => s.setPlayOpen);
   const g = useSim((s) => (open ? s.snap?.game : undefined));
   const topology = useApp((s) => s.topology);
+  const recommended = useOnboarding((s) => s.recommended);
+  const suggested = useOnboarding((s) => s.intensity);
+  const bests = useProgress((s) => s.bests);
   if (!open || !g) return null;
+  const scenarios = scenariosFor(topology.meta.profile?.industry).sort((a, b) => Number(b.id === recommended) - Number(a.id === recommended));
+  const done = scenarios.filter((s) => bests[s.id]).length;
   const playing = g.mode !== "sandbox" && !g.finished;
   const start = (cmd: { mode: "free"; intensity: Intensity } | { mode: "scenario"; scenarioId: string }) => {
     void sim.dispatch({ type: "game.start", ...cmd });
@@ -106,13 +111,20 @@ export function PlaySheet() {
         {(["calm", "normal", "intense"] as const).map((i) => (
           <button key={i} className={primary} onClick={() => start({ mode: "free", intensity: i })}>
             {i[0]!.toUpperCase() + i.slice(1)}
+            {i === suggested && <span className="ml-1 font-normal opacity-80">(suggested)</span>}
           </button>
         ))}
       </div>
       <H>Scenarios</H>
+      <p className="-mt-1 mb-2 text-[11px] text-ink-3">
+        {done} of {scenarios.length} completed in this browser. Your best score for each is kept here.
+      </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        {scenariosFor(topology.meta.profile?.industry).map((s) => (
-          <article key={s.id} className={`${card} flex flex-col`}>
+        {scenarios.map((s) => (
+          <article key={s.id} className={`${card} flex flex-col ${s.id === recommended ? "shadow-[0_0_0_2px_var(--color-accent)]" : ""}`}>
+            {s.id === recommended && (
+              <span className="mb-1 self-start rounded-full bg-accent px-2 py-0.5 text-[10px] font-semibold text-white">Recommended for you</span>
+            )}
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="text-[14px] font-semibold">{s.name}</h3>
               <span className="text-[11px] uppercase tracking-[0.06em] text-ink-3">
@@ -130,7 +142,15 @@ export function PlaySheet() {
                 <li key={o.label}>◦ {o.label}</li>
               ))}
             </ul>
-            <ScenarioTopScores scenarioId={s.id} />
+            <p className="mt-2 text-[11px] text-ink-3">
+              {bests[s.id] ? (
+                <>
+                  Your best: <b className={GRADE[bests[s.id]!.grade]}>{bests[s.id]!.score}</b> · grade {bests[s.id]!.grade}
+                </>
+              ) : (
+                "Not tried yet"
+              )}
+            </p>
             <button className={`${primary} mt-3 self-start`} onClick={() => start({ mode: "scenario", scenarioId: s.id })}>
               Start
             </button>
@@ -161,6 +181,23 @@ export function PlaySheet() {
       </div>
     </Modal>
   );
+}
+
+// ── Local progress ───────────────────────────────────────────────────────────
+
+/** Records each finished scenario as a personal best when it beats the last one (src/state/progress.ts). */
+export function useRecordProgress(): void {
+  useEffect(() => {
+    let wasFinished: boolean | undefined;
+    return useSim.subscribe((s) => {
+      const g = s.snap?.game;
+      const finished = g?.finished ?? false;
+      if (g && finished && wasFinished === false && g.mode === "scenario" && g.scenario) {
+        if (recordRun(g.scenario.id, g.score, g.grade)) sim.notify(`New personal best on ${g.scenario.name}: ${g.score}`);
+      }
+      wasFinished = finished;
+    });
+  }, []);
 }
 
 // ── HUD ──────────────────────────────────────────────────────────────────────
@@ -335,12 +372,6 @@ export function ReportSheet() {
           </div>
         ))}
       </div>
-      {apiEnabled && g.mode === "scenario" && g.finished && (
-        <>
-          <H>Leaderboard{g.scenario ? `: ${g.scenario.name}` : ""}</H>
-          <SubmitScore game={g} />
-        </>
-      )}
       {g.objectives.length > 0 && (
         <>
           <H>Objectives{g.scenario ? `: ${g.scenario.name}` : ""}</H>

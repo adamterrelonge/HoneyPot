@@ -4,11 +4,12 @@ import { COMPLIANCE_INFO } from "./engine/gen/spec";
 import { bootSimulation, useApp } from "./state/store";
 import { Inspector, Sidebar } from "./ui/panels";
 import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-panels";
-import { GameHud, IncidentsPanel, PlaySheet, ReportSheet } from "./ui/game-panels";
+import { GameHud, IncidentsPanel, PlaySheet, ReportSheet, useRecordProgress } from "./ui/game-panels";
 import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
-import { SharedLinkOpener } from "./ui/online-panels";
 import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
+import { onboarding } from "./state/onboarding";
+import { Onboarding } from "./ui/onboarding";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
@@ -36,6 +37,7 @@ export function App() {
   const theme = usePrefs((s) => s.resolved);
 
   useEffect(() => bootSimulation(), []);
+  useRecordProgress();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && select(null);
@@ -78,12 +80,12 @@ export function App() {
       <ErrorToast />
       <NoticeToast />
       <SavesSheet />
-      <SharedLinkOpener />
       <PolicySheet />
       <VulnerabilitiesSheet />
       <PlaySheet />
       <ReportSheet />
       <Wizard />
+      <Onboarding />
       <Tour />
     </div>
   );
@@ -139,6 +141,9 @@ function TopBar() {
     <>
       <button onClick={() => openWizard(true)} className={quiet}>
         New business…
+      </button>
+      <button onClick={() => onboarding.reopen()} className={quiet}>
+        Your goals
       </button>
       <button data-tour="saves" onClick={() => setSavesOpen(true)} className={quiet}>
         Saves

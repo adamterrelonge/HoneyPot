@@ -5,12 +5,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { describeSave, type SaveFile } from "../engine/save/save";
 import { AUTOSAVE_KEEP, deleteSave, listSaves, newSaveId, putSave, type SaveRecord } from "../persist/db";
-import { apiEnabled } from "../persist/api";
 import { decodeShareCode, encodeShareCode } from "../persist/share";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
 import { H, Modal, card, primary } from "./game-panels";
-import { copyShareLink } from "./online-panels";
 
 const quiet =
   "h-7 rounded-[8px] bg-fill/[0.05] px-2.5 text-[12px] font-medium text-ink-2 hover:bg-fill/[0.08] hover:text-ink disabled:opacity-40";
@@ -103,7 +101,6 @@ export function SavesSheet() {
   const [name, setName] = useState("");
   const [paste, setPaste] = useState("");
   const [code, setCode] = useState<string | null>(null);
-  const [link, setLink] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,7 +121,6 @@ export function SavesSheet() {
     if (!open) return;
     setName("");
     setCode(null);
-    setLink(null);
     setConfirm(null);
     setProblem(null);
     setPaste("");
@@ -194,11 +190,6 @@ export function SavesSheet() {
           <button className={quiet} disabled={busy} onClick={() => void guard(() => copyCode(r.save, setCode))}>
             Copy code
           </button>
-          {apiEnabled && (
-            <button className={quiet} disabled={busy} onClick={() => void guard(() => copyShareLink(r.save, setLink))}>
-              Copy link
-            </button>
-          )}
           <button
             className={quiet}
             disabled={busy}
@@ -247,33 +238,7 @@ export function SavesSheet() {
         >
           Copy share code
         </button>
-        {apiEnabled && (
-          <button
-            className={quiet}
-            disabled={busy}
-            onClick={() =>
-              void guard(async () => {
-                const save = await sim.exportSave();
-                if (save) await copyShareLink(save, setLink);
-              })
-            }
-          >
-            Copy link
-          </button>
-        )}
       </div>
-      {link && (
-        <div className="mt-2">
-          <p className="mb-1 text-[11px] text-ink-3">Share link. Anyone with it can open this exact moment in their browser.</p>
-          <input
-            readOnly
-            value={link}
-            onFocus={(e) => e.currentTarget.select()}
-            aria-label="Share link"
-            className="h-8 w-full rounded-[8px] bg-surface/80 px-2.5 font-mono text-[11px] text-ink-2 shadow-[inset_0_0_0_0.5px_rgb(var(--shade)/0.12)] outline-none"
-          />
-        </div>
-      )}
       {code && (
         <div className="mt-2">
           <p className="mb-1 text-[11px] text-ink-3">

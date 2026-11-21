@@ -35,11 +35,6 @@ jobs:
       # Pages serves the site under /<repo>/, so every asset URL needs that prefix
       # (public/ images go through `asset()` in src/render/theme.ts).
       - run: npm run build -- --base=/${{ github.event.repository.name }}/
-        env:
-          # Optional backend (api/). Set the repository variable API_URL (Settings → Secrets and
-          # variables → Actions → Variables) to turn on share links and leaderboards; leave it
-          # unset and the site stays fully offline.
-          VITE_API_URL: ${{ vars.API_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

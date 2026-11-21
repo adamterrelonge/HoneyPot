@@ -183,12 +183,6 @@ per-scenario leaderboards. The server checks a save's envelope and stores it as 
 browser engine validates it and checks its hash when it is opened. Grades are computed on the
 server. See [`api/README.md`](api/README.md) for endpoints, configuration and what's still to do.
 
-The game uses it only when built with `VITE_API_URL` set (for example
-`VITE_API_URL=http://localhost:8000 npm run dev`). It then adds **Copy link** in Saves, opens
-`?share=<id>` links at start-up, and lets you submit a finished scenario and see its top scores
-(after-action report and Play sheet). Without it those controls are hidden and the game stays fully
-offline. The GitHub Pages deploy reads the URL from the repository variable `API_URL`.
-
 [`build.md`](build.md) is the full design reference: architecture, domain model, an abstraction
 ledger of what is and isn't simulated, and the phase plan. [`BUILD_DIARY.md`](BUILD_DIARY.md)
 records what was built in each phase, with test results and decisions.

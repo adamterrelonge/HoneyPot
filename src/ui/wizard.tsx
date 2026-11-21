@@ -72,7 +72,7 @@ export function Wizard() {
     const parsed = BusinessSpecSchema.safeParse(spec);
     if (parsed.success) {
       loadBusiness(generateBusiness(parsed.data));
-      tour.offer();
+      tour.afterBusinessCreated();
     }
   };
 
@@ -296,7 +296,7 @@ export function Wizard() {
           <button
             onClick={() => {
               loadBusiness(sampleTopology);
-              tour.offer();
+              tour.afterBusinessCreated();
             }}
             className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-accent-ink hover:bg-accent/10"
           >

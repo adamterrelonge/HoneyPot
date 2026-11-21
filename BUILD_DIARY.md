@@ -1163,3 +1163,50 @@ engine port and an optional Python backend.
 1. Push and check that all three CI jobs pass, especially `api`, which has never run.
 2. Where to host the live demo, and whether to deploy the API with it.
 3. Next priority: wiring WASM into the simulation, frontend integration of the API, or the manual screen-reader audit.
+
+---
+
+## Phase 11 — Onboarding & local progress · 2026-11-21 · ✅ complete
+
+Decisions applied (from the workflow doc): the hosted API is not deployed; the game stays free and
+offline-first; leaderboards give way to local progress; onboarding first, then realism (Phases 12–14).
+
+### 1. Summary
+- **Onboarding flow** in one card (`src/ui/onboarding.tsx`), with the goal → plan logic kept pure in
+  `src/state/onboarding.ts`. Native radio cards (arrow keys, screen readers), focus moves to each step's
+  heading, the step count is announced, motion respects reduced-motion.
+- **Tour folded in:** `tour.afterBusinessCreated()` starts or skips the tour from the Ready screen's choice;
+  the separate pop-up appears only for visitors who skipped onboarding.
+- **Personal bests** (`src/state/progress.ts`) on the Play sheet's scenario cards, a recommended badge and
+  the suggested intensity.
+- **Pages deploy:** `.github/workflows/pages.yml` publishes the static site after CI passes; `public/`
+  paths resolve against the deploy base through `asset()`.
+- **Online UI removed from master** (share links, leaderboards); kept on the `online-features` branch.
+  `api/` stays as a tested draft and the hosted API is not deployed.
+
+### 2. Tests run
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `npm run typecheck` | ✅ |
+| Unit tests | `npx vitest run` | ✅ **205 passed, 19 files** (7 WASM tests skipped without a local WASM build) |
+| New tests | `state/onboarding.test.ts`: every topic, threat and the review scenario exists and fits the sample business; every goal × familiarity has a plan; intensity and tour defaults; personal-best merging | ✅ 6 passed |
+| Build | `npm run build` | ✅ |
+| Browser check | Onboarding paths, Skip, Esc, returning visitor, tour hand-off, Play sheet | ✅ tried by the project owner |
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Four engine tests failed in a full run, passed alone | 5 s default timeout while a preview server and a CI watcher were running | Not a regression; full runs use `--testTimeout=20000` on a busy machine |
+| Command-error toast hidden under the wizard and other sheets | No z-index on `ErrorToast` | Raised to `z-50`, like the notice toast |
+
+### 4. Known limitations / debt
+- Learn mode has no lessons yet: a topic only picks the scenario (lessons are Phase 14).
+- Familiarity changes pace and the tour default, not the wording (plain-language hints are Phase 14).
+- Personal bests live in one browser's localStorage.
+
+### 5. Ideas for later
+- "Continue where you left off" for returning visitors, from the newest autosave.
+- A shorter tour for "Work in IT or security".
+
+### 6. Hand-off
+Phase 12 (ATT&CK tags, incident response phases, threat actors, report card).

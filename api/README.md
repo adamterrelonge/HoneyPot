@@ -49,15 +49,6 @@ Environment variables (or a `.env` file):
 | `POST` | `/api/scores` | `{scenario_id, player, industry, score, seed, state_hash}` | `201 {id, grade, rank}` |
 | `GET` | `/api/scenarios/{scenario_id}/leaderboard` | `?limit=1..100` (default 10) | ranked list |
 
-## Frontend
-
-The game talks to this API through `src/persist/api.ts` when built with `VITE_API_URL`:
-**Copy link** in Saves (`POST /api/shares`), `?share=<id>` opened at start-up
-(`GET /api/shares/{id}`), score submission in the after-action report (`POST /api/scores`) and
-top scores in the report and Play sheet (`GET .../leaderboard`). Run both locally with
-`uvicorn app.main:create_app --factory --reload` here and `VITE_API_URL=http://localhost:8000 npm run dev`
-at the root (the default CORS list already allows the Vite dev and preview ports).
-
 ## Design notes
 
 - **The server never interprets simulation state.** It checks a save's envelope (format, version,
@@ -76,6 +67,5 @@ at the root (the default CORS list already allows the Vite dev and preview ports
   the Rust engine in `engine-rs/` once the full simulation is ported.
 - **Abuse controls:** rate limiting, a profanity filter for names, and authentication.
 - **Migrations:** tables are created at start-up. Production needs Alembic.
-- **Hosting:** not deployed yet. When it is, add the game's origin to `HONEYPOT_CORS_ORIGINS`
-  (e.g. `["https://adamterrelonge.github.io"]`) and set the `API_URL` repository variable so
-  the Pages build turns the online features on.
+- **Not deployed or wired into the game.** The game stays offline-first; an earlier frontend
+  integration (share links, leaderboards) is kept on the `online-features` branch.

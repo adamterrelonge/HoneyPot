@@ -13,6 +13,7 @@ import { parseTopology, type Topology } from "../engine/model";
 import type { TraceResult } from "../engine/sim/types";
 import { stressTopology } from "../engine/stress";
 import { sim } from "./sim";
+import { returningToWizard } from "./onboarding";
 
 export type CameraRequest =
   | { kind: "zoomIn" }
@@ -90,7 +91,8 @@ export const useApp = create<AppState>()((set, get) => ({
   topology: initial,
   graph: buildGraph(initial),
   topologyKey: 0,
-  wizardOpen: !stressParam,
+  // First visits start with onboarding instead (src/ui/onboarding.tsx).
+  wizardOpen: !stressParam && returningToWizard,
   selectedId: null,
   hoveredId: null,
   zoom: 1,
