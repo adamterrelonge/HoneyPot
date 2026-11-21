@@ -13,6 +13,7 @@
  */
 import type { Advisory } from "../firmware/catalog";
 import { ACTORS, DEFAULT_ACTOR, actorWeights, type ActorId } from "./actors";
+import { planRoute } from "./planner";
 import type { Condition } from "../firmware/lifecycle";
 import type { Budget, NetNode, NodeKind, Role, Topology } from "../model";
 import { MINUTES_PER_TICK, minuteOfTick, timeOfDay } from "../sim/clock";
@@ -29,6 +30,8 @@ const MOVE_TICKS = 10 / MINUTES_PER_TICK;
 const PERSON = new Set<NodeKind>(["desktop", "laptop", "phone"]);
 const TARGETS = new Set<NodeKind>(["server", "database", "nas", "desktop", "laptop", "honeypot", "camera"]);
 const ENCRYPTABLE = new Set<NodeKind>(["server", "database", "nas", "desktop", "laptop"]);
+/** Planner goals for office ransomware, most wanted first: data, then backups (so recovery fails), then servers. */
+const GOAL_RANK: Partial<Record<NodeKind, number>> = { database: 0, nas: 1, server: 2 };
 const EDGE = new Set<NodeKind>(["firewall", "vpn", "server", "router"]);
 /** Operational technology: production controllers and clinical devices (OT ransomware's targets). */
 const OT = new Set<NodeKind>(["plc", "medical"]);
@@ -89,6 +92,10 @@ interface Incident {
   nextMoveTick: number;
   moves: number;
   maxMoves: number;
+  /** Phase 12: moves chosen by the attack planner (ransomware gang, free play). Absent = scripted spread. */
+  planned?: true;
+  /** The planner's last route (held device first), to notice reroutes. */
+  route?: string[];
   impactTick?: number;
   encrypted: string[];
   /** Pending actions: key → completion tick. Keys are an action id or `restore:<node>`. */
@@ -391,6 +398,8 @@ export class IncidentEngine {
       id, kind, startTick: w.tick, timeline: [], footholds: [], nextMoveTick: w.tick + MOVE_TICKS, moves: 0, maxMoves: 0,
       encrypted: [], pending: {}, done: [], exfilMbps: 0, dataMB: 0, cost: 0,
     };
+    // A ransomware gang plans its route to the crown jewels instead of wandering (free play only).
+    if (this.mode === "free" && this.actor === "ransomware-gang" && (kind === "ransomware" || kind === "ot-ransomware")) inc.planned = true;
     this.incidents.push(inc);
     const r = (k: number) => noise(deriveSeed(this.seed, id), w.tick * 7 + k);
     const nodes = this.topology.nodes.filter((n) => w.usable(n.id) && !this.isDormantDecoy(n.id));
@@ -713,7 +722,12 @@ export class IncidentEngine {
             inc.nextMoveTick = tick + MOVE_TICKS;
             // OT crews hold off encrypting until they reach the production systems (up to 6 extra tries).
             const waitForOt = inc.kind === "ot-ransomware" && !inc.footholds.some((f) => OT.has(this.nodes.get(f)!.kind)) && inc.moves < inc.maxMoves + 6;
-            if (inc.moves < inc.maxMoves || waitForOt) this.move(inc, sources, w, detect);
+            // A planning gang also holds off until it holds one of its goals (same 6-move cap).
+            const waitForGoal = inc.planned === true && !inc.footholds.some((f) => this.isGoal(inc, f)) && inc.moves < inc.maxMoves + 6;
+            if (inc.moves < inc.maxMoves || waitForOt || waitForGoal) {
+              if (inc.planned) this.planMove(inc, sources, w, detect);
+              else this.move(inc, sources, w, detect);
+            }
             else this.impact(inc, sources, w, detect);
           }
           if (inc.impactTick !== undefined && inc.payload === "theft" && inc.containedTick === undefined) inc.exfilMbps = inc.kind === "supply-chain" ? 2 : 30; // backdoors leak low and slow
@@ -775,6 +789,71 @@ export class IncidentEngine {
 
     if (this.playing) this.accrue(w);
     return events;
+  }
+
+  /** Crown jewels: production systems for OT crews; databases, backup storage and servers otherwise. */
+  private isGoal(inc: Incident, id: string): boolean {
+    const kind = this.nodes.get(id)?.kind;
+    if (!kind) return false;
+    return inc.kind === "ot-ransomware" ? OT.has(kind) : GOAL_RANK[kind] !== undefined;
+  }
+
+  /**
+   * One planned move: route from the current footholds to the most valuable reachable goal (see
+   * planner.ts), then try its first hop with the same odds as a scripted move. Replanned every move
+   * against the live network, so isolating a device or tightening the firewall forces a reroute.
+   */
+  private planMove(inc: Incident, sources: string[], w: World, detect: (why: string) => void): void {
+    const ot = inc.kind === "ot-ransomware";
+    const passable = this.topology.nodes.filter(
+      (n) => (TARGETS.has(n.kind) || (ot && OT.has(n.kind))) && !inc.footholds.includes(n.id) && w.usable(n.id) && !this.isDormantDecoy(n.id),
+    );
+    const goals = passable
+      .filter((n) => this.isGoal(inc, n.id))
+      .sort((a, b) => (GOAL_RANK[a.kind] ?? 0) - (GOAL_RANK[b.kind] ?? 0))
+      .map((n) => n.id);
+    const memo = new Map<string, boolean>();
+    const reach = (from: string, to: string) => {
+      const key = `${from}>${to}`;
+      let ok = memo.get(key);
+      if (ok === undefined) memo.set(key, (ok = w.canReach(from, to, reachService(this.nodes.get(to)!))));
+      return ok;
+    };
+    const chance = (id: string) => (w.exposed(id).some((a) => a.exploited) ? 0.9 : 0.45);
+    const route = planRoute({ sources, goals, nodes: passable.map((n) => n.id), reach, chance });
+    if (!route || route.path.length < 2) {
+      if (inc.route) this.note(inc, w.tick, "Every route to the valuable systems is blocked: the attacker falls back to probing");
+      inc.route = undefined;
+      this.move(inc, sources, w, detect);
+      return;
+    }
+    const labels = route.path.map((id) => this.label(id)).join(" → ");
+    const pct = Math.round(route.chance * 100);
+    // Compare the parts of the old and new routes the attacker doesn't hold yet: progress along the
+    // same route is not a reroute; a new goal after taking the last one is a next target.
+    const held = new Set(inc.footholds);
+    const course = (p: string[]) => p.filter((n) => !held.has(n)).join(">");
+    const prevGoal = inc.route?.at(-1);
+    if (!inc.route || prevGoal === undefined) this.note(inc, w.tick, `Planned a route to ${this.label(route.goal)}: ${labels} (${pct}% chance)`);
+    else if (held.has(prevGoal)) this.note(inc, w.tick, `Next target ${this.label(route.goal)}: ${labels} (${pct}% chance)`);
+    else if (course(inc.route) !== course(route.path)) this.note(inc, w.tick, `Rerouted to ${this.label(route.goal)}: ${labels} (${pct}% chance)`);
+    inc.route = route.path;
+    inc.moves++;
+    const from = route.path[0]!;
+    const target = this.nodes.get(route.path[1]!)!;
+    if (target.kind === "honeypot") {
+      this.note(inc, w.tick, `The attacker on ${this.label(from)} touched decoy ${target.label}`);
+      detect(`decoy ${target.label} was accessed from ${this.label(from)}`);
+      return;
+    }
+    const r = noise(deriveSeed(this.seed, inc.id), w.tick * 7 + 12);
+    const cve = w.exposed(target.id).find((a) => a.exploited);
+    if (r < (cve ? 0.9 : 0.45)) {
+      inc.footholds.push(target.id);
+      this.note(inc, w.tick, `Moved from ${this.label(from)} to ${target.label} ${cve ? `via ${cve.cve}` : "with stolen credentials"}`);
+    } else {
+      this.note(inc, w.tick, `Failed to break into ${target.label} from ${this.label(from)}`);
+    }
   }
 
   private move(inc: Incident, sources: string[], w: World, detect: (why: string) => void): void {

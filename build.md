@@ -729,8 +729,16 @@ criteria pass and a diary entry exists.
   sets a pace; operational incidents are never changed. "Mixed" is the identity and is not written to saves,
   so older saves keep their hash and existing replays are unchanged. The Play sheet picker shows each
   actor's blurb and typical ATT&CK techniques; the report names the adversary.
-- To do: an attack-graph planner (attackers search the network for a route and
-  react to defences), report card export (PNG/PDF).
+- **Attack planner** (`engine/incidents/planner.ts`) ✅: free-play ransomware from the Ransomware gang plans
+  instead of wandering. Each move it finds the route most likely to succeed from its footholds to the
+  crown jewels (databases, then backup storage, then servers; production systems for OT crews): Dijkstra
+  over the hops the firewall currently allows, cost −ln(chance), with the scripted odds per hop (90% via an
+  exploited CVE, 45% with stolen credentials). Replanned every move against the live network, so isolating
+  a device or tightening a rule forces a reroute; with no route left it falls back to probing. It doesn't
+  know decoys, so a honeypot on its route still catches it. Timeline notes: "Planned a route to …",
+  "Next target …", "Rerouted to …". It holds off encrypting until it holds a goal (6-move cap). Scenarios
+  and other actors keep the scripted spread; `planned`/`route` are saved only when set.
+- To do: report card export (PNG/PDF).
 
 ---
 

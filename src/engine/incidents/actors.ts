@@ -35,7 +35,7 @@ export const ACTORS: Record<ActorId, Actor> = {
   },
   "ransomware-gang": {
     name: "Ransomware gang",
-    blurb: "Patient and organised: they get in, spread quietly, then encrypt everything at once.",
+    blurb: "Patient and organised: they plan a route to your databases and backups, work around what you block, then encrypt everything at once.",
     weights: { ransomware: 3, "ot-ransomware": 3, phishing: 1.5, "credential-stuffing": 1.5, "edge-exploit": 1.5, ddos: 0.3, "invoice-fraud": 0.3, insider: 0, "supply-chain": 0.5 },
     pace: 0.8,
   },
