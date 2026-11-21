@@ -3,6 +3,7 @@
  * Mirrors the report sheet: headline numbers, objectives, then every incident (including the
  * ones never detected) with its timeline and lessons.
  */
+import { ATTACK } from "./attack";
 import { formatClock } from "../sim/clock";
 import type { GameView, IncidentView } from "./engine";
 
@@ -61,6 +62,13 @@ export function reportMarkdown(g: GameView, info: ReportInfo): string {
     if (i.footholds.length) out.push(`**Attacker footholds:** ${i.footholds.map(cell).join(", ")}`, "");
     if (i.encrypted.length) out.push(`**Encrypted:** ${i.encrypted.map(cell).join(", ")}`, "");
     if (i.dataMB > 0) out.push(`**Data stolen:** ${(i.dataMB / 1000).toFixed(2)} GB`, "");
+    const techniques = ATTACK[i.kind];
+    out.push(
+      techniques.length
+        ? `**MITRE ATT&CK:** ${techniques.map((t) => `${t.id} ${t.name} (${t.tactic})`).join(" · ")}`
+        : "**MITRE ATT&CK:** none (operational incident, no adversary)",
+      "",
+    );
     if (i.timeline.length) {
       out.push("**Timeline**", "");
       for (const t of i.timeline) out.push(`- \`${at(t.minute)}\` ${t.text}`);

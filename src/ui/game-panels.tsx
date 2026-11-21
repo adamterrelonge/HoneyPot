@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from "react";
 import { INDUSTRY_INFO } from "../engine/gen/spec";
 import { scenariosFor, type Intensity } from "../engine/incidents/catalog";
 import type { GameView, IncidentView } from "../engine/incidents/engine";
+import { ATTACK, attackUrl } from "../engine/incidents/attack";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
@@ -319,6 +320,29 @@ export function IncidentsPanel({ width }: { width: number }) {
   );
 }
 
+/** MITRE ATT&CK techniques for an incident kind, each linking to its page on attack.mitre.org. */
+function Techniques({ kind }: { kind: IncidentView["kind"] }) {
+  const techniques = ATTACK[kind];
+  if (!techniques.length) return <p className="mt-1 text-[11px] text-ink-3">Operational incident: no adversary techniques.</p>;
+  return (
+    <ul className="mt-2 flex flex-wrap gap-1" aria-label="MITRE ATT&CK techniques">
+      {techniques.map((t) => (
+        <li key={t.id}>
+          <a
+            href={attackUrl(t.id)}
+            target="_blank"
+            rel="noreferrer"
+            title={`${t.tactic} · opens attack.mitre.org`}
+            className="inline-block rounded-full bg-fill/[0.06] px-2 py-0.5 text-[11px] text-ink-2 hover:bg-accent/10 hover:text-accent-ink"
+          >
+            <span className="font-mono">{t.id}</span> {t.name}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // ── After-action report ──────────────────────────────────────────────────────
 
 /** Download the report as Markdown, named after the business and the date. */
@@ -397,6 +421,7 @@ export function ReportSheet() {
               Started {when(i.startedMinute)} · detected {when(i.detectedMinute)} · contained {when(i.containedMinute)} · resolved{" "}
               {when(i.resolvedMinute)} · cost {money(i.cost)}
             </p>
+            <Techniques kind={i.kind} />
             <ol className="mt-2 space-y-0.5 border-l-2 border-hairline pl-3 text-[12px]">
               {i.timeline.map((t, k) => (
                 <li key={k}>
