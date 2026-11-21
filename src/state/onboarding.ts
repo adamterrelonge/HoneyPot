@@ -73,7 +73,10 @@ export function planFor(a: Answers): Plan {
     case "threats": {
       const focus = FOCUS[a.goal].find((f) => f.id === a.focus) ?? FOCUS[a.goal][0]!;
       const s = scenario(focus.scenarioId)!;
-      return { start: "sample", scenarioId: s.id, intensity, tour, summary: `${focus.title} · scenario “${s.name}” (${s.difficulty}) on a sample business` };
+      const summary = a.goal === "learn"
+        ? `A short hands-on lesson on ${focus.title.toLowerCase()}, then the scenario “${s.name}” (${s.difficulty})`
+        : `${focus.title} · scenario “${s.name}” (${s.difficulty}) on a sample business`;
+      return { start: "sample", scenarioId: s.id, intensity, tour, summary };
     }
     case "review": {
       const s = scenario(REVIEW_SCENARIO)!;

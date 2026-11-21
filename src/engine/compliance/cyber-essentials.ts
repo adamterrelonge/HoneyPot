@@ -208,7 +208,7 @@ export function assessCyberEssentials(input: CeInput): CeReport {
   if (endpoints.length && !input.controls.includes("edr")) {
     malware.findings.push({
       text: `No anti-malware is evidenced on ${plural(devices(endpoints), "server, desktop or laptop", "servers, desktops and laptops")}.`,
-      fix: "Deploy endpoint detection & response (Alerts → Tools). Built-in antivirus would also qualify in real life; the simulation counts only what you deploy.",
+      fix: "Deploy endpoint detection & response (Alerts → Security tools). Built-in antivirus would also qualify in real life; the simulation counts only what you deploy.",
       action: { kind: "control", control: "edr" },
     });
   }

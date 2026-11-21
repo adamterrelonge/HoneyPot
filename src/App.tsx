@@ -12,6 +12,7 @@ import { onboarding } from "./state/onboarding";
 import { Onboarding } from "./ui/onboarding";
 import { AlertsButton, SocPanel } from "./ui/soc-panels";
 import { ComplianceButton, ComplianceSheet } from "./ui/compliance-panels";
+import { LessonCard, LessonsButton, LessonsSheet } from "./ui/lessons";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
@@ -87,6 +88,8 @@ export function App() {
       <PolicySheet />
       <VulnerabilitiesSheet />
       <ComplianceSheet />
+      <LessonsSheet />
+      <LessonCard />
       <PlaySheet />
       <ReportSheet />
       <Wizard />
@@ -150,6 +153,7 @@ function TopBar() {
       <button onClick={() => onboarding.reopen()} className={quiet}>
         Your goals
       </button>
+      <LessonsButton />
       <button data-tour="saves" onClick={() => setSavesOpen(true)} className={quiet}>
         Saves
       </button>

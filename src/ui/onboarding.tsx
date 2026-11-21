@@ -14,6 +14,7 @@ import { useDialogFocus } from "./a11y";
 import { primary } from "./game-panels";
 import { Logo } from "./logo";
 import { tour } from "./tour";
+import { lessons } from "../state/lessons";
 
 type Step = "welcome" | "goal" | "familiarity" | "focus" | "ready";
 
@@ -33,8 +34,10 @@ function begin(answers: Answers, showTour: boolean): void {
   }
   // The sample business is already running behind the card.
   onboarding.takePendingTour();
+  // Learn mode: a guided lesson on the chosen topic (it shows after the tour and ends with the scenario).
+  if (answers.goal === "learn") lessons.start(answers.focus ?? FOCUS.learn[0]!.id);
   if (showTour) tour.start();
-  else if (plan.scenarioId) app.setPlayOpen(true);
+  else if (plan.scenarioId && answers.goal !== "learn") app.setPlayOpen(true);
 }
 
 export function Onboarding() {
