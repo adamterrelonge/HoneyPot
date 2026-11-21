@@ -13,7 +13,7 @@ import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
 import { useOnboarding } from "../state/onboarding";
-import { downloadReportCard, reportCardSvg } from "./report-card";
+import { downloadReportCard, imageDataUrl, reportCardSvg } from "./report-card";
 import { recordRun, useProgress } from "../state/progress";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
@@ -397,7 +397,8 @@ async function exportCard(g: GameView): Promise<void> {
   const meta = useApp.getState().topology.meta;
   const clock = formatClock(useSim.getState().snap?.minute ?? 0);
   const now = new Date();
-  const svg = reportCardSvg(g, { business: meta.name, when: `${clock.day} ${clock.time}`, date: now.toLocaleDateString("en-GB", { dateStyle: "medium" }) });
+  const logo = await imageDataUrl(asset("/emoji/honeypot.png"));
+  const svg = reportCardSvg(g, { business: meta.name, when: `${clock.day} ${clock.time}`, date: now.toLocaleDateString("en-GB", { dateStyle: "medium" }), logo });
   const slug = meta.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "business";
   const name = `${slug}-report-card-${now.toISOString().slice(0, 10)}.png`;
   try {

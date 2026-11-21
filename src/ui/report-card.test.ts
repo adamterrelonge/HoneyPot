@@ -41,11 +41,19 @@ describe("report card", () => {
     expect(svg).toContain("T1486");
   });
 
-  it("lists up to three lessons, costliest incidents first, without repeats", () => {
+  it("lists up to two lessons, costliest incidents first, without repeats", () => {
     const lessons = topLessons(g);
     expect(lessons.length).toBeGreaterThan(0);
-    expect(lessons.length).toBeLessThanOrEqual(3);
+    expect(lessons.length).toBeLessThanOrEqual(2);
     expect(new Set(lessons).size).toBe(lessons.length);
+  });
+
+  it("embeds the logo when given, and shifts the title beside it", () => {
+    const logo = "data:image/png;base64,iVBORw0KGgo=";
+    const withLogo = reportCardSvg(g, { ...info, logo });
+    expect(withLogo).toContain(`<image href="${logo}"`);
+    expect(Number(withLogo.match(/<text x="(\d+)" y="44"/)![1])).toBeGreaterThan(40);
+    expect(svg).not.toContain("<image");
   });
 
   it("handles a game with no incidents", () => {
