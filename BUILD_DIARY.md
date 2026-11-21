@@ -1210,3 +1210,58 @@ offline-first; leaderboards give way to local progress; onboarding first, then r
 
 ### 6. Hand-off
 Phase 12 (ATT&CK tags, incident response phases, threat actors, report card).
+
+---
+
+## Phase 12 — Speak the industry's language · 2026-11-21 · ✅ complete
+
+Decisions applied: verify every ATT&CK ID against attack.mitre.org before using it; derive response
+phases from existing timings (no simulation change); actors and the planner only in free play, with
+"Mixed" as an exact no-op so saves and replays are unchanged; a PNG report card without a library.
+
+### 1. Summary
+- **MITRE ATT&CK** (`engine/incidents/attack.ts`): techniques per adversarial incident kind, linked chips
+  in the report, a line per incident in the Markdown export. Operational incidents have none.
+- **Response phases** (`engine/incidents/phases.ts`): detection, containment, eradication & recovery per
+  incident; MTTD, MTTC and MTTR tiles and Markdown rows.
+- **Threat actors** (`engine/incidents/actors.ts`): Mixed, Opportunists, Ransomware gang, Fraud ring and
+  Insider, as weight and pace multipliers on the exposure model; picker in the Play sheet.
+- **Attack planner** (`engine/incidents/planner.ts`): the Ransomware gang routes to the crown jewels
+  (Dijkstra over the hops the firewall allows, cost −ln(chance)), replans every move, reroutes around
+  isolation and rule changes, and falls back to probing with no route.
+- **Report card** (`ui/report-card.ts`): a one-page PNG summary from the after-action report.
+
+### 2. Tests run
+| Check | How | Result |
+|---|---|---|
+| ATT&CK facts | 14 IDs looked up on attack.mitre.org | ✅ 13 confirmed active with matching names; T1656 page empty, left out |
+| Typecheck | `npm run typecheck` | ✅ |
+| Unit tests | `npx vitest run --testTimeout=30000` | ✅ **222 passed, 23 files** (7 WASM tests skipped without a local WASM build) |
+| New tests | `attack`, `phases`, `actors`, `planner`, `report-card` | ✅ 3 + 5 + 6 + 9 + 5 |
+| Replay and saves | Existing whole-game replay and save tests with the new fields | ✅ unchanged |
+| Build | `npm run build` | ✅ |
+| Report card render | Sample card opened in Chrome at 1200×800 | ✅ after two layout fixes (below) |
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Planner logged "Rerouted" when moving on after taking a goal | Any change of goal or next hop counted as a reroute | Compare the unheld parts of the routes; "Next target" when the old goal is held |
+| Reroute test passed or failed by timing | It isolated devices after the attack had effectively finished | Isolate the database before the first move and assert the plan avoids it |
+| Technique names cut short and right edges misaligned on the card | Chip text clipped at 22 characters; grade and chips anchored past the 1120 px edge | Clip at 26 at 14 px; align everything to 1120 |
+| 200-node speed test failed in some full runs | 10 ms/tick wall-clock limit while 20+ test files run in parallel on a busy laptop | Passes alone and in CI; left as is, noted here |
+| Docs written through `node -e` lost their code spans | Bash ran the backticks inside the double-quoted script | Edits and scripts now go through files or the editor, never inline backticks |
+
+### 4. Known limitations / debt
+- Only free-play ransomware from the Ransomware gang plans; scenarios keep the scripted spread.
+- The planner doesn't model credentials or privilege; every hop uses the same two odds.
+- The report card is PNG only, and uses system fonts in the image.
+- The 200-node speed test is sensitive to machine load.
+
+### 5. Ideas for later
+- Draw the planned route on the map while an incident is detected.
+- Let scenarios opt in to the planner.
+- Run the 200-node speed test on its own, outside the parallel suite.
+
+### 6. Hand-off
+Phase 13: the alert triage queue and buyable security controls, with Sigma rules and realistic logs (see
+the workflow doc's Stack additions).
