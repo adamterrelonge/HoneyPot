@@ -1265,3 +1265,55 @@ phases from existing timings (no simulation change); actors and the planner only
 ### 6. Hand-off
 Phase 13: the alert triage queue and buyable security controls, with Sigma rules and realistic logs (see
 the workflow doc's Stack additions).
+
+---
+
+## Phase 13 — Detection becomes a skill · 2026-11-21 · ✅ complete
+
+Also in this phase: the report card was made smaller (960×540, exported at 1920×1080) and now carries the
+Honeypot logo, embedded as a data URL because an SVG drawn as an image can't load files.
+
+### 1. Summary
+- **Logs → rules → alerts → triage** in `src/engine/soc/` (logs, rules, soc), wired into the incident
+  engine: attack steps leave traces, everyday activity leaves noise, enabled rules raise alerts.
+- **Sigma-style rules:** ten rules with selection, filter and condition; Sigma YAML view; can be switched off.
+- **Triage:** escalate (a real alert detects its incident now; a false alarm costs £150), dismiss, or let
+  expire after 4 h (a missed real alert).
+- **Security tools:** EDR, SIEM, email security gateway, immutable backups, paid from each game's budget.
+- **UI:** Alerts button and Security operations panel (queue with raw logs, rules, tools); log export as
+  JSON Lines; alert triage stats in the report sheet and Markdown.
+
+### 2. Tests run
+| Check | How | Result |
+|---|---|---|
+| Typecheck | `npm run typecheck` | ✅ |
+| Unit tests | `npx vitest run --testTimeout=30000` | ✅ **237 passed, 24 files** (7 WASM tests skipped without a local WASM build) |
+| New tests | `soc.test.ts`: rule tags, YAML, matching and filters; raw lines and JSONL; quiet sandbox; determinism; escalate detects; false-alarm cost; expiry; disabled rule; tool charges; EDR visibility; email gateway; saves | ✅ 14 passed |
+| Existing behaviour | All earlier incident, scenario, replay and save tests | ✅ unchanged |
+| Build | `vite build --base=/HoneyPot/` | ✅ |
+| Browser | Sample business, EDR and SIEM deployed, intense free play against the Ransomware gang at 16× | ✅ alerts arrived, panel, tabs and tools worked |
+| Report card | Sample card with the logo opened in Chrome at 960×540 | ✅ |
+
+### 3. Issues found & resolved
+| Symptom | Cause | Fix |
+|---|---|---|
+| Two SOC tests read an incident that wasn't there | During a game the view hides undetected incidents (by design) | Tests assert it is hidden before escalation and visible after |
+| New preview server exited at once | An earlier preview process still held port 4599 | Stopped that process (verified by its command line first) |
+| Phase 13 docs missing from the code commit | A workspace hook blocked the doc edits | Added in a follow-up commit |
+
+### 4. Known limitations / debt
+- **Scoring:** data theft costs 0.08 points per MB, so an exfiltration at 30 Mbps floors the score within
+  the hour (seen in the browser check: 124.5 GB stolen, score 0). It needs a cap or a log scale.
+- Rules can be switched off but not edited; the Sigma subset has no aggregation (`count() by`).
+- Phishing that only steals a password (no document) leaves no trace until it moves.
+- Triage is by verdict only; there is no investigation step (pivoting through related logs).
+
+### 5. Ideas for later
+- Rebalance the data-theft penalty.
+- A rule editor (fields and thresholds), with a replay showing alerts gained and lost.
+- An investigation view: all logs for a host or account around an alert's time.
+
+### 6. Hand-off
+Phase 14: learn mode (guided lessons per topic), staff awareness training, the Cyber Essentials gap report,
+the reviewer demo, and a README case study with a GIF. Rebalancing the data-theft penalty first is worth
+considering.

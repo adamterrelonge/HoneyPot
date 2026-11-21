@@ -744,6 +744,36 @@ criteria pass and a diary entry exists.
   it prints and shares well. "Report card (PNG)" in the after-action report. PDF left out: the PNG covers
   showing and attaching, and PDF would need a library or a print layout.
 
+### Phase 13 — Detection becomes a skill ✅ (2026-11-21)
+- **Pipeline** (`engine/soc/`): log events → Sigma-style detection rules → an alert queue the player triages.
+  Pure and seeded; runs only while a game is being played.
+- **Logs** (`soc/logs.ts`): Windows Security events (4624, 4625, 4663), firewall, VPN, mail gateway, EDR
+  and Zeek-style flow records, each rendered as a realistic raw line. External addresses come from the
+  RFC 5737 documentation ranges. "Export logs (.jsonl)" writes JSON Lines for Elastic, Splunk or jq.
+- **Rules** (`soc/rules.ts`): ten rules in Sigma's shape (logsource, selection, filter, condition, level,
+  ATT&CK tags), with exact, list, `|contains`, `|startswith` and `|gte` matching and
+  `selection and not filter`. Viewable as Sigma YAML; each can be switched off. Tags use only the checked
+  ATT&CK IDs.
+- **Noise:** everyday activity (password typos, IT admin support, scanners, supplier emails, finance
+  macros, nightly backups, large uploads, file copying) produces events too. Rule filters hide the
+  known-good ones (IT admin, the backup provider, known suppliers); the rest are false alarms.
+- **Attack traces:** malicious document (EDR), exploit request, lateral logons and remote service installs,
+  failed logons, VPN sign-in storm, bank-detail email, vendor agent beacon (every 2 h), mass file reads, and
+  hourly exfiltration flows (SIEM).
+- **Triage** (`alert.triage`): escalating a real alert detects its incident at once; a false alarm costs £150
+  of analyst time; real alerts dismissed or left for 4 h count as missed. Stats in the report sheet, the
+  Markdown export and the panel header.
+- **Security tools** (`control.set`): EDR (£20/employee: endpoint telemetry), SIEM (£5,000: network flows,
+  merges repeat alerts within 30 min), email security gateway (£8/employee: quarantines about half of
+  phishing and fake-invoice emails), immutable backups (£3,000: restores take half the time). Charged against
+  each game's budget at the start, or at once when added mid-game; no refunds.
+- **UI** (`ui/soc-panels.tsx`): "Alerts" in the top bar with a waiting count; a Security operations panel
+  with Alert queue, Detection rules and Security tools tabs.
+- **Compatibility:** SOC state is saved only when non-empty, so older saves keep their hash; noise uses its
+  own random stream, so existing scenarios and replays are unchanged.
+- Not done: the Rust/WASM port of log generation and rule matching. A few events per tick is far below
+  what needs it.
+
 ---
 
 ## 9. Conventions
