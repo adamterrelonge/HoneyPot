@@ -9,8 +9,10 @@ import type { GameView, IncidentView } from "../engine/incidents/engine";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
 import { asset, emojiUrl } from "../render/theme";
+import { apiEnabled } from "../persist/api";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
+import { ScenarioTopScores, SubmitScore } from "./online-panels";
 import { useDialogFocus } from "./a11y";
 import { Switch } from "./policy-panels";
 
@@ -128,6 +130,7 @@ export function PlaySheet() {
                 <li key={o.label}>◦ {o.label}</li>
               ))}
             </ul>
+            <ScenarioTopScores scenarioId={s.id} />
             <button className={`${primary} mt-3 self-start`} onClick={() => start({ mode: "scenario", scenarioId: s.id })}>
               Start
             </button>
@@ -332,6 +335,12 @@ export function ReportSheet() {
           </div>
         ))}
       </div>
+      {apiEnabled && g.mode === "scenario" && g.finished && (
+        <>
+          <H>Leaderboard{g.scenario ? `: ${g.scenario.name}` : ""}</H>
+          <SubmitScore game={g} />
+        </>
+      )}
       {g.objectives.length > 0 && (
         <>
           <H>Objectives{g.scenario ? `: ${g.scenario.name}` : ""}</H>

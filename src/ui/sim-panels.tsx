@@ -253,7 +253,7 @@ export function ErrorToast() {
   return (
     <div
       role="alert"
-      className="glass absolute top-[var(--top,72px)] left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-bad-ink"
+      className="glass absolute top-[var(--top,72px)] left-1/2 z-50 -translate-x-1/2 rounded-full px-4 py-2 text-[12px] font-medium text-bad-ink"
     >
       {error}
     </div>

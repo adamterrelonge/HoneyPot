@@ -7,6 +7,7 @@ import { ActivityFeed, ErrorToast, ServicesPanel, SimControls } from "./ui/sim-p
 import { GameHud, IncidentsPanel, PlaySheet, ReportSheet } from "./ui/game-panels";
 import { VulnerabilitiesSheet, useExposedCount } from "./ui/lifecycle-panels";
 import { PolicySheet, TracePanel } from "./ui/policy-panels";
+import { SharedLinkOpener } from "./ui/online-panels";
 import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
@@ -77,6 +78,7 @@ export function App() {
       <ErrorToast />
       <NoticeToast />
       <SavesSheet />
+      <SharedLinkOpener />
       <PolicySheet />
       <VulnerabilitiesSheet />
       <PlaySheet />
