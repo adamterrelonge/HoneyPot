@@ -222,6 +222,18 @@ describe("after a game", () => {
     expect(sim.snapshot().flows.some((f) => f.app === "exfil")).toBe(false);
   });
 
+  it("every event names its app, including the ones incidents inject (exfil, DDoS)", () => {
+    const sim = at(topo);
+    sim.dispatch({ type: "game.start", mode: "scenario", scenarioId: "bad-day", intensity: "normal" });
+    const texts: string[] = [];
+    for (let h = 0; h < 10; h++) {
+      sim.advance(HOUR);
+      texts.push(...sim.snapshot().events.map((e) => e.text));
+    }
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.filter((t) => t.includes("undefined"))).toEqual([]);
+  });
+
   it("stolen data costs score on a capped log scale, so one long theft can't zero the score alone", () => {
     expect(dataPenalty(0)).toBe(0);
     expect(dataPenalty(100)).toBeCloseTo(57.3, 0);

@@ -282,6 +282,11 @@ export class Simulation {
     };
   }
 
+  /** Display name of an app; incident-injected apps (exfil, DDoS) aren't in the boot-time map. */
+  private appName(app: AppId): string {
+    return this.labels.get(app) ?? appLabel(app, this.topology);
+  }
+
   /** Still on the vendor's default password. */
   defaultPassword(id: string): boolean {
     return !this.passwordChanged.has(id) && (this.nodes.get(id)?.tags.includes("default-credentials") ?? false);
@@ -935,7 +940,7 @@ export class Simulation {
     // Identity: business apps need the user's role to have access.
     const role = this.nodeRole.get(d.client);
     if (role && d.needs.includes("directory") && accessFor(this.roles, role, d.app) === "none") {
-      return { reason: `Access denied: the ${ROLE_INFO[role].label} role has no access to ${this.labels.get(d.app)}` };
+      return { reason: `Access denied: the ${ROLE_INFO[role].label} role has no access to ${this.appName(d.app)}` };
     }
     // Dependency chain: DNS first, then the directory sign-in. Any reachable, permitted host will do.
     const from = d.via ?? d.client;
@@ -1204,7 +1209,7 @@ export class Simulation {
       per.set(f.app, c);
       if (bad && f.reason) {
         const list = asClient.get(f.client) ?? [];
-        list.push(`${this.labels.get(f.app)}: ${f.reason}`);
+        list.push(`${this.appName(f.app)}: ${f.reason}`);
         asClient.set(f.client, list);
       }
     }
@@ -1235,7 +1240,7 @@ export class Simulation {
         } else if (s.util >= 0.9) reasons.push(`Link to ${peer} at ${pct(s.util)}`);
       }
       for (const [app, c] of asServer.get(n.id) ?? []) {
-        if (c.bad > 0 && n.kind !== "internet") reasons.push(`${this.labels.get(app)}: ${c.bad} of ${c.total} users affected`);
+        if (c.bad > 0 && n.kind !== "internet") reasons.push(`${this.appName(app)}: ${c.bad} of ${c.total} users affected`);
       }
       // Remote users and portal visitors appear as the Internet node; it is not "degraded".
       if (n.kind !== "internet") reasons.push(...new Set(asClient.get(n.id) ?? []));
@@ -1259,7 +1264,8 @@ export class Simulation {
       const prev = this.prevApp.get(a.app) ?? "idle";
       this.prevApp.set(a.app, a.status);
       if (prev === a.status) continue;
-      const label = this.labels.get(a.app)!;
+      // Apps that incidents inject later (exfil, DDoS) are not in the boot-time label map.
+      const label = this.appName(a.app);
       const affected = `${a.down + a.degraded} of ${a.total}`;
       if (a.status === "down") this.emit("bad", `${label} down: ${a.reason ?? "unavailable"}`);
       else if (a.status === "degraded") this.emit("warn", `${label} degraded (${affected} affected): ${a.reason ?? ""}`);
