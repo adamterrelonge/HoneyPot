@@ -8,7 +8,7 @@ import { scenariosFor, type Intensity } from "../engine/incidents/catalog";
 import type { GameView, IncidentView } from "../engine/incidents/engine";
 import { reportMarkdown } from "../engine/incidents/report";
 import { formatClock } from "../engine/sim/clock";
-import { emojiUrl } from "../render/theme";
+import { asset, emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
 import { useDialogFocus } from "./a11y";
@@ -49,7 +49,7 @@ export function Modal({ title, icon, onClose, children }: { title: string; icon:
     >
       <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-3">
-          <img src={icon} alt="" className="h-8 w-8" />
+          <img src={asset(icon)} alt="" className="h-8 w-8" />
           <h1 className="flex-1 text-[20px] font-semibold tracking-tight">{title}</h1>
           <button
             onClick={onClose}

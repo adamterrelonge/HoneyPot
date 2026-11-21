@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SEVERITY_RANK, advisoryByCve, productById, type Advisory, type Severity } from "../engine/firmware/catalog";
 import type { NetNode } from "../engine/model";
 import { formatClock } from "../engine/sim/clock";
-import { emojiUrl } from "../render/theme";
+import { asset, emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
 import { useDialogFocus } from "./a11y";
@@ -270,7 +270,7 @@ export function VulnerabilitiesSheet() {
     >
       <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-2">
-          <img src="/emoji/warning.png" alt="" className="h-8 w-8" />
+          <img src={asset("/emoji/warning.png")} alt="" className="h-8 w-8" />
           <div className="flex-1">
             <h1 id="vulns-title" className="text-[20px] font-semibold tracking-tight">Vulnerabilities</h1>
             <p className="text-[12px] text-ink-3">

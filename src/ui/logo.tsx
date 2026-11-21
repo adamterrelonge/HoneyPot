@@ -5,7 +5,9 @@
  *
  * Size it by height only (e.g. "h-6"); the width follows from the aspect ratio.
  */
-const LOGO_URL = "/emoji/honeypot.png";
+import { asset } from "../render/theme";
+
+const LOGO_URL = asset("/emoji/honeypot.png");
 
 export function Logo({ className = "h-6" }: { className?: string }) {
   return (

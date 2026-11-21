@@ -8,7 +8,7 @@ import { ACCESS_LEVELS, ROLES, type Access, type Role, type Rule, type Topology 
 import { ROLE_INFO, describeSelector } from "../engine/policy/policy";
 import { serviceLabel } from "../engine/sim/demands";
 import { APP_IDS, type TraceStep } from "../engine/sim/types";
-import { emojiUrl } from "../render/theme";
+import { asset, emojiUrl } from "../render/theme";
 import { sim, useSim } from "../state/sim";
 import { useApp } from "../state/store";
 import { useDialogFocus } from "./a11y";
@@ -245,7 +245,7 @@ function PolicyDialog({ tab, setTab }: { tab: "rules" | "access"; setTab: (t: "r
     >
       <div className="glass flex max-h-full w-full max-w-[860px] flex-col overflow-hidden rounded-[24px] bg-surface/85">
         <header className="flex items-center gap-3 px-6 pt-5 pb-3">
-          <img src="/emoji/shield.png" alt="" className="h-8 w-8" />
+          <img src={asset("/emoji/shield.png")} alt="" className="h-8 w-8" />
           <h1 id="policy-title" className="flex-1 text-[20px] font-semibold tracking-tight">Policy</h1>
           <div className="flex rounded-[10px] bg-fill/[0.05] p-0.5" role="tablist">
             {(["rules", "access"] as const).map((t) => (

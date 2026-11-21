@@ -9,6 +9,7 @@ import {
   defaultSpec, randomSpec, type BusinessSpec,
 } from "../engine/gen/spec";
 import { BUDGETS, BUSINESS_SIZES, COMPLIANCE, HOSTING, INDUSTRIES, type BusinessSize, type Industry } from "../engine/model";
+import { asset } from "../render/theme";
 import { sampleTopology, useApp } from "../state/store";
 import { Logo } from "./logo";
 import { useDialogFocus } from "./a11y";
@@ -155,11 +156,11 @@ export function Wizard() {
                     }`}
                   >
                     <img
-                      src={info.icon}
+                      src={asset(info.icon)}
                       alt=""
                       className="h-9 w-9"
                       onError={(e) => {
-                        if (!e.currentTarget.src.endsWith("/emoji/hq.png")) e.currentTarget.src = "/emoji/hq.png";
+                        if (!e.currentTarget.src.endsWith("/emoji/hq.png")) e.currentTarget.src = asset("/emoji/hq.png");
                       }}
                     />
                     <span className="mt-2 text-[13px] font-semibold leading-tight">{info.label}</span>

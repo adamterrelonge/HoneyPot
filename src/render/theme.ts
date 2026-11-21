@@ -129,7 +129,10 @@ export const NODE_ART: Record<NodeKind, { file: string; size: number; glyph: str
   medical: { file: "medical", size: 52, glyph: "🩻" },
 };
 
-export const emojiUrl = (kind: NodeKind) => `/emoji/${NODE_ART[kind].file}.png`;
+/** Resolves a `public/` path (written as "/emoji/x.png") against the deploy base, e.g. /HoneyPot/ on GitHub Pages. */
+export const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
+
+export const emojiUrl = (kind: NodeKind) => asset(`/emoji/${NODE_ART[kind].file}.png`);
 
 /** Traffic particle colours by application category (see engine/sim/demands.ts). */
 export const CATEGORY_COLORS: Record<AppCategory, number> = {
