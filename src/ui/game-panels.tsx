@@ -481,6 +481,27 @@ export function ReportSheet() {
           </div>
         ))}
       </div>
+      {g.soc.stats.caught + g.soc.stats.falseAlarms + g.soc.stats.missed + g.soc.stats.cleared > 0 && (
+        <>
+          <H>Alert triage</H>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {(
+              [
+                ["Caught", g.soc.stats.caught, "real alerts escalated"],
+                ["False alarms", g.soc.stats.falseAlarms, "escalated by mistake"],
+                ["Missed", g.soc.stats.missed, "real alerts dismissed or expired"],
+                ["Cleared", g.soc.stats.cleared, "false alarms dismissed"],
+              ] as const
+            ).map(([k, v, sub]) => (
+              <div key={k} className={card}>
+                <p className="text-[11px] uppercase tracking-[0.06em] text-ink-3">{k}</p>
+                <p className="text-[20px] font-semibold tabular-nums">{v}</p>
+                <p className="text-[11px] text-ink-3">{sub}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {g.objectives.length > 0 && (
         <>
           <H>Objectives{g.scenario ? `: ${g.scenario.name}` : ""}</H>

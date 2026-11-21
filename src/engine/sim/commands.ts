@@ -5,6 +5,7 @@
  */
 import { z } from "zod";
 import { ACTOR_IDS } from "../incidents/actors";
+import { CONTROL_IDS } from "../soc/soc";
 import { INCIDENT_KINDS } from "../incidents/catalog";
 import { ACCESS_LEVELS, ROLES, RuleSchema } from "../model";
 
@@ -47,6 +48,10 @@ export const CommandSchema = z.discriminatedUnion("type", [
     intensity: z.enum(["calm", "normal", "intense"]).optional(), actor: z.enum(ACTOR_IDS).optional(),
   }),
   z.object({ type: z.literal("game.stop") }),
+  // Phase 13: security operations
+  z.object({ type: z.literal("alert.triage"), alertId: z.string().min(1), verdict: z.enum(["escalate", "dismiss"]) }),
+  z.object({ type: z.literal("control.set"), control: z.enum(CONTROL_IDS), owned: z.boolean() }),
+  z.object({ type: z.literal("rule.setEnabled"), ruleId: z.string().min(1), enabled: z.boolean() }),
   z.object({ type: z.literal("incident.start"), kind: z.enum(INCIDENT_KINDS), target: z.string().optional() }),
   z.object({ type: z.literal("incident.act"), incidentId: z.string().min(1), action: z.string().min(1), nodeId: z.string().optional() }),
   z.object({ type: z.literal("decoy.setDeployed"), nodeId: z.string().min(1), deployed: z.boolean() }),

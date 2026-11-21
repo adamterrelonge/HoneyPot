@@ -16,7 +16,10 @@ import { ACTORS, DEFAULT_ACTOR, actorWeights, type ActorId } from "./actors";
 import { planRoute } from "./planner";
 import type { Condition } from "../firmware/lifecycle";
 import type { Budget, NetNode, NodeKind, Role, Topology } from "../model";
-import { MINUTES_PER_TICK, minuteOfTick, timeOfDay } from "../sim/clock";
+import { MINUTES_PER_TICK, formatClock, minuteOfTick, timeOfDay } from "../sim/clock";
+import { rawLine, type LogSource } from "../soc/logs";
+import { ruleById } from "../soc/rules";
+import { CONTROLS, CONTROL_IDS, FALSE_ALARM_COST, Soc, isEmptySoc, type Alert, type ControlId, type SocState, type SocStats } from "../soc/soc";
 import { APP_INFO } from "../sim/demands";
 import { deriveSeed, noise } from "../sim/rng";
 import type { AppHealth, Demand, FlowState } from "../sim/types";
@@ -63,7 +66,11 @@ export type IncidentCommand =
   | { type: "game.stop" }
   | { type: "incident.start"; kind: IncidentKind; target?: string }
   | { type: "incident.act"; incidentId: string; action: string; nodeId?: string }
-  | { type: "decoy.setDeployed"; nodeId: string; deployed: boolean };
+  | { type: "decoy.setDeployed"; nodeId: string; deployed: boolean }
+  // Phase 13: security operations
+  | { type: "alert.triage"; alertId: string; verdict: "escalate" | "dismiss" }
+  | { type: "control.set"; control: ControlId; owned: boolean }
+  | { type: "rule.setEnabled"; ruleId: string; enabled: boolean };
 
 export interface IncidentEvent {
   severity: "info" | "ok" | "warn" | "bad";
@@ -123,6 +130,8 @@ export interface IncidentState {
   intensity: Intensity;
   /** Free-play adversary; absent means "mixed" (saved only when set, so older saves hash the same). */
   actor?: ActorId;
+  /** Phase 13 logs, alerts, rules and controls; absent when empty (older saves hash the same). */
+  soc?: SocState;
   scenario: Scenario | null;
   finished: boolean;
   endTick?: number;
@@ -189,6 +198,33 @@ export interface GameView {
   objectives: ObjectiveView[];
   incidents: IncidentView[];
   decoys: Record<string, boolean>;
+  soc: SocView;
+}
+
+export interface AlertView {
+  id: string;
+  minute: number;
+  ruleId: string;
+  title: string;
+  level: string;
+  /** ATT&CK technique IDs from the rule's tags, e.g. T1110.004. */
+  techniques: string[];
+  host: string;
+  hostLabel: string;
+  source: LogSource;
+  raw: string;
+  status: Alert["status"];
+}
+
+export interface SocView {
+  /** Newest first. */
+  alerts: AlertView[];
+  /** Alerts waiting for a verdict. */
+  open: number;
+  stats: SocStats;
+  controls: { id: ControlId; name: string; blurb: string; effect: string; price: number; owned: boolean }[];
+  /** Rule ids the player turned off. */
+  disabled: string[];
 }
 
 // ── Engine ───────────────────────────────────────────────────────────────────
@@ -209,9 +245,12 @@ export class IncidentEngine {
   private spend = 0;
   private costPerMinute = 0;
   private readonly nodes: Map<string, NetNode>;
+  /** Phase 13: logs, detection rules, the alert queue and security controls. */
+  readonly soc: Soc;
 
   constructor(private readonly topology: Topology, private readonly seed: number) {
     this.nodes = new Map(topology.nodes.map((n) => [n.id, n]));
+    this.soc = new Soc(seed, topology);
     for (const n of topology.nodes) if (n.tags.includes("decoy")) this.decoys.set(n.id, false);
     const budget: Budget = topology.meta.profile?.budget ?? "standard";
     this.budget = BUDGET_PER_EMPLOYEE[budget] * topology.meta.employees;
@@ -312,6 +351,9 @@ export class IncidentEngine {
         this.incidents = [];
         this.lost = 0;
         this.spend = 0;
+        // Fresh logs and queue; the security tools you run are paid for out of this game's budget.
+        this.soc.reset();
+        this.charge(this.controlsCost());
         this.schedule = scenario
           ? scenario.events.map((e) => ({ tick: w.tick + Math.round(e.afterMinutes / MINUTES_PER_TICK), kind: e.incident }))
           : [];
@@ -328,6 +370,43 @@ export class IncidentEngine {
       case "incident.start": {
         const inc = this.start(cmd.kind, w, cmd.target);
         return { ok: true, noop: false, event: { severity: "info", text: `Incident injected: ${INCIDENT_INFO[cmd.kind].title} (${inc.id})` } };
+      }
+      case "alert.triage": {
+        const res = this.soc.triage(cmd.alertId, cmd.verdict);
+        if (typeof res === "string") return { ok: false, error: res };
+        const rule = ruleById(res.ruleId)!;
+        if (cmd.verdict === "dismiss") return { ok: true, noop: false, event: { severity: "info", text: `Dismissed alert: ${rule.title}` } };
+        const inc = res.event.incidentId ? this.incidents.find((i) => i.id === res.event.incidentId) : undefined;
+        if (!inc) {
+          this.charge(FALSE_ALARM_COST);
+          return { ok: true, noop: false, event: { severity: "warn", text: `False alarm: ${rule.title}${this.playing ? ` (£${FALSE_ALARM_COST} of analyst time)` : ""}` } };
+        }
+        if (inc.detectedTick === undefined && inc.resolvedTick === undefined) {
+          inc.detectedTick = w.tick;
+          const why = `an analyst escalated "${rule.title}" on ${this.label(res.event.host)}`;
+          this.note(inc, w.tick, `Detected: ${why}`);
+          return { ok: true, noop: false, event: { severity: "bad", subject: res.event.host, text: `🚨 ${INCIDENT_INFO[inc.kind].title}: ${why}` } };
+        }
+        return { ok: true, noop: false, event: { severity: "info", text: `Escalated: ${rule.title} (part of a known incident)` } };
+      }
+      case "control.set": {
+        if (this.soc.has(cmd.control) === cmd.owned) return { ok: true, noop: true };
+        const c = CONTROLS[cmd.control];
+        if (cmd.owned) {
+          this.soc.state.controls = CONTROL_IDS.filter((x) => x === cmd.control || this.soc.has(x));
+          const price = c.price(this.topology.meta.employees);
+          this.charge(price);
+          return { ok: true, noop: false, event: { severity: "info", text: `${c.name} deployed${this.playing ? ` (£${price.toLocaleString("en-GB")})` : ""}` } };
+        }
+        this.soc.state.controls = this.soc.state.controls.filter((x) => x !== cmd.control);
+        return { ok: true, noop: false, event: { severity: "info", text: `${c.name} removed` } };
+      }
+      case "rule.setEnabled": {
+        const rule = ruleById(cmd.ruleId);
+        if (!rule) return { ok: false, error: "Unknown detection rule" };
+        if (this.soc.state.disabled.includes(rule.id) === !cmd.enabled) return { ok: true, noop: true };
+        this.soc.state.disabled = cmd.enabled ? this.soc.state.disabled.filter((x) => x !== rule.id) : [...this.soc.state.disabled, rule.id];
+        return { ok: true, noop: false, event: { severity: "info", text: `Detection rule ${cmd.enabled ? "on" : "off"}: ${rule.title}` } };
       }
       case "decoy.setDeployed": {
         if (!this.decoys.has(cmd.nodeId)) return { ok: false, error: `"${cmd.nodeId}" is not a decoy` };
@@ -352,12 +431,13 @@ export class IncidentEngine {
           const key = `restore:${node}`;
           if (inc.pending[key] !== undefined) return { ok: true, noop: true };
           const plan = this.restorePlan(node, w);
-          inc.pending[key] = w.tick + Math.round(plan.minutes / MINUTES_PER_TICK);
+          const minutes = plan.minutes * (this.soc.has("immutable-backups") ? 0.5 : 1);
+          inc.pending[key] = w.tick + Math.round(minutes / MINUTES_PER_TICK);
           this.charge(plan.cost, inc);
           this.note(inc, w.tick, `${plan.label} for ${this.label(node)} started`);
           return {
             ok: true, noop: false,
-            event: { severity: "info", subject: node, text: `${plan.label}: ${this.label(node)} back in ${fmtDuration(plan.minutes)}` },
+            event: { severity: "info", subject: node, text: `${plan.label}: ${this.label(node)} back in ${fmtDuration(minutes)}` },
           };
         }
         const def = ACTIONS[cmd.action];
@@ -444,7 +524,13 @@ export class IncidentEngine {
           break;
         }
         const entry = pick(route[1], 2, (n) => n.count)!;
+        if (route[0] === "a phished account without MFA" && this.soc.has("email-gateway") && r(40) < 0.5) {
+          fail("The email gateway quarantined the phishing email that would have let a ransomware crew in");
+          break;
+        }
         inc.footholds.push(entry.id);
+        if (route[0] === "a phished account without MFA") this.soc.attack({ step: "macro", host: entry.id }, id, w.tick);
+        else if (route[0] === "an exploited vulnerability") this.soc.attack({ step: "exploit", host: entry.id, cve: w.exposed(entry.id).find((a) => a.exploited)?.cve }, id, w.tick);
         inc.payload = "ransomware";
         inc.maxMoves = (kind === "ot-ransomware" ? 5 : 3) + Math.floor(r(3) * 3);
         this.note(inc, w.tick, `Initial access via ${route[0]}: ${entry.label}`);
@@ -484,6 +570,10 @@ export class IncidentEngine {
         break;
       }
       case "invoice-fraud": {
+        if (this.soc.has("email-gateway") && r(40) < 0.5) {
+          fail("The email gateway flagged the fake invoice (sender failed authentication) and quarantined it");
+          break;
+        }
         const people = nodes.filter((n) => PERSON.has(n.kind) && !n.tags.includes("guest"));
         const finance = byId(target) ?? people.find((n) => w.roleOf(n.id) === "manager") ?? people[0];
         if (!finance) {
@@ -500,6 +590,10 @@ export class IncidentEngine {
         break;
       }
       case "phishing": {
+        if (this.soc.has("email-gateway") && r(40) < 0.5) {
+          fail("The email gateway quarantined the phishing email before anyone clicked");
+          break;
+        }
         const victim = byId(target) ?? pick(nodes.filter(unprotected), 1, (n) => n.count);
         if (!victim) {
           fail("A phishing email fooled staff, but MFA stopped the stolen password being used");
@@ -632,6 +726,10 @@ export class IncidentEngine {
       events.push({ severity: "info", text: `Scenario over: ${this.scenario?.name}. The after-action report is ready` });
     }
     if (this.mode === "free" && this.playing) this.maybeSpawn(w);
+    if (this.playing) {
+      this.soc.noise(tick);
+      this.soc.expire(tick);
+    }
 
     for (const inc of this.incidents) {
       if (inc.resolvedTick !== undefined) continue;
@@ -681,6 +779,7 @@ export class IncidentEngine {
       if (this.gameOver && ATTACKS.has(inc.kind)) continue;
 
       if (inc.detectAfter !== undefined && tick >= inc.detectAfter) detect(DETECTION_TEXT[inc.kind]);
+      if (!inc.failed && inc.containedTick === undefined) this.traces(inc, tick);
 
       switch (inc.kind) {
         case "ransomware":
@@ -791,6 +890,61 @@ export class IncidentEngine {
     return events;
   }
 
+  /** Price of the security tools currently running, for one game. */
+  controlsCost(): number {
+    return this.soc.state.controls.reduce((sum, c) => sum + CONTROLS[c].price(this.topology.meta.employees), 0);
+  }
+
+  /** Log traces an incident leaves over time (Phase 13): what the alert queue can catch before detection. */
+  private traces(inc: Incident, tick: number): void {
+    const age = tick - inc.startTick;
+    const hourly = age > 0 && age % TICKS_PER_HOUR === 0;
+    switch (inc.kind) {
+      case "credential-stuffing":
+        if (age === 1 && inc.target) this.soc.attack({ step: "vpn-storm", host: inc.target }, inc.id, tick);
+        break;
+      case "invoice-fraud":
+        if (age === 1 && inc.target) this.soc.attack({ step: "bank-change", host: inc.target, internal: inc.mailboxTakeover === true }, inc.id, tick);
+        break;
+      case "edge-exploit":
+        if (age === 1 && inc.footholds[0]) this.soc.attack({ step: "exploit", host: inc.footholds[0] }, inc.id, tick);
+        break;
+      case "supply-chain":
+        // The backdoored agent calls home every two hours, starting an hour in.
+        if (age >= TICKS_PER_HOUR && (age - TICKS_PER_HOUR) % (2 * TICKS_PER_HOUR) === 0 && inc.planted?.[0]) this.soc.attack({ step: "beacon", host: inc.planted[0] }, inc.id, tick);
+        break;
+      case "insider":
+        if ((age === 1 || hourly) && inc.target) this.soc.attack({ step: "mass-read", host: inc.target }, inc.id, tick);
+        break;
+    }
+    if (hourly && inc.exfilMbps > 0 && inc.footholds[0]) this.soc.attack({ step: "exfil", host: inc.footholds[0], mb: (inc.exfilMbps * 3600) / 8 }, inc.id, tick);
+  }
+
+  private socView(): SocView {
+    const s = this.soc.state;
+    const alerts = [...s.alerts]
+      .reverse()
+      .slice(0, 80)
+      .map((a): AlertView => {
+        const rule = ruleById(a.ruleId)!;
+        const minute = minuteOfTick(a.tick);
+        const clock = formatClock(minute);
+        return {
+          id: a.id, minute, ruleId: a.ruleId, title: rule.title, level: rule.level,
+          techniques: rule.tags.filter((t) => /^attack\.t\d/.test(t)).map((t) => t.slice(7).toUpperCase()),
+          host: a.event.host, hostLabel: this.label(a.event.host), source: a.event.source,
+          raw: rawLine(a.event, `${clock.day} ${clock.time}`, this.label(a.event.host)), status: a.status,
+        };
+      });
+    return {
+      alerts,
+      open: s.alerts.filter((a) => a.status === "new").length,
+      stats: { ...s.stats },
+      controls: CONTROL_IDS.map((id) => ({ id, name: CONTROLS[id].name, blurb: CONTROLS[id].blurb, effect: CONTROLS[id].effect, price: CONTROLS[id].price(this.topology.meta.employees), owned: this.soc.has(id) })),
+      disabled: [...s.disabled],
+    };
+  }
+
   /** Crown jewels: production systems for OT crews; databases, backup storage and servers otherwise. */
   private isGoal(inc: Incident, id: string): boolean {
     const kind = this.nodes.get(id)?.kind;
@@ -851,8 +1005,10 @@ export class IncidentEngine {
     if (r < (cve ? 0.9 : 0.45)) {
       inc.footholds.push(target.id);
       this.note(inc, w.tick, `Moved from ${this.label(from)} to ${target.label} ${cve ? `via ${cve.cve}` : "with stolen credentials"}`);
+      this.soc.attack({ step: "lateral", host: target.id, from }, inc.id, w.tick);
     } else {
       this.note(inc, w.tick, `Failed to break into ${target.label} from ${this.label(from)}`);
+      this.soc.attack({ step: "lateral-fail", host: target.id, from }, inc.id, w.tick);
     }
   }
 
@@ -884,8 +1040,10 @@ export class IncidentEngine {
     if (r(12) < (cve ? 0.9 : 0.45)) {
       inc.footholds.push(target.id);
       this.note(inc, w.tick, `Moved from ${this.label(from)} to ${target.label} ${cve ? `via ${cve.cve}` : "with stolen credentials"}`);
+      this.soc.attack({ step: "lateral", host: target.id, from }, inc.id, w.tick);
     } else {
       this.note(inc, w.tick, `Failed to break into ${target.label} from ${this.label(from)}`);
+      this.soc.attack({ step: "lateral-fail", host: target.id, from }, inc.id, w.tick);
     }
   }
 
@@ -990,6 +1148,7 @@ export class IncidentEngine {
       objectives,
       incidents,
       decoys: Object.fromEntries(this.decoys),
+      soc: this.socView(),
     };
   }
 
@@ -1082,6 +1241,7 @@ export class IncidentEngine {
         mode: this.mode, intensity: this.intensity, ...(this.actor === DEFAULT_ACTOR ? {} : { actor: this.actor }), scenario: this.scenario, finished: this.finished, endTick: this.endTick,
         incidents: this.incidents, seq: this.seq, schedule: this.schedule, decoys: Object.fromEntries(this.decoys),
         lost: this.lost, spend: this.spend, costPerMinute: this.costPerMinute,
+        ...(isEmptySoc(this.soc.state) ? {} : { soc: this.soc.exportState() }),
       }),
     ) as IncidentState;
   }
@@ -1101,6 +1261,7 @@ export class IncidentEngine {
     this.lost = c.lost;
     this.spend = c.spend;
     this.costPerMinute = c.costPerMinute;
+    this.soc.importState(c.soc);
   }
 
   hashPart(): string {

@@ -10,6 +10,7 @@ import { PolicySheet, TracePanel } from "./ui/policy-panels";
 import { HistoryButtons, NoticeToast, SavesSheet } from "./ui/save-panels";
 import { onboarding } from "./state/onboarding";
 import { Onboarding } from "./ui/onboarding";
+import { AlertsButton, SocPanel } from "./ui/soc-panels";
 import { Wizard } from "./ui/wizard";
 import { LiveAnnouncer, SkipLinks, TableView, ThemeToggle } from "./ui/a11y-panels";
 import { Tour } from "./ui/tour";
@@ -25,6 +26,7 @@ export function App() {
   const select = useApp((s) => s.select);
   const tracing = useApp((s) => s.trace !== null);
   const incidentsOpen = useApp((s) => s.incidentsOpen);
+  const socOpen = useApp((s) => s.socOpen);
   const devicesOpen = useApp((s) => s.devicesOpen);
   const servicesOpen = useApp((s) => s.servicesOpen);
   const setDevicesOpen = useApp((s) => s.setDevicesOpen);
@@ -58,9 +60,9 @@ export function App() {
     () => (compact ? { left: 24, right: 72, top: 72, bottom: 120 } : { left: SIDEBAR_W + 24, right: INSPECTOR_W + 24, top: 72, bottom: 120 }),
     [compact],
   );
-  const servicesVisible = !selectedId && !tracing && !incidentsOpen && (!compact || servicesOpen);
+  const servicesVisible = !selectedId && !tracing && !incidentsOpen && !socOpen && (!compact || servicesOpen);
   // Phones: a right-hand panel runs to the bottom of the screen, so the feed and zoom buttons step aside.
-  const rightPanelOpen = servicesVisible || !!selectedId || tracing || incidentsOpen;
+  const rightPanelOpen = servicesVisible || !!selectedId || tracing || incidentsOpen || socOpen;
   const phoneCovered = width < 640 && rightPanelOpen;
 
   return (
@@ -73,6 +75,7 @@ export function App() {
       <Inspector width={rightW} />
       <TracePanel width={rightW} />
       {!tracing && <IncidentsPanel width={rightW} />}
+      {!tracing && <SocPanel width={rightW} />}
       {!phoneCovered && <ZoomControls />}
       {!phoneCovered && <ActivityFeed left={compact ? 12 : SIDEBAR_W + 24} right={72} />}
       <TableView left={compact ? 12 : SIDEBAR_W + 24} right={compact ? 12 : INSPECTOR_W + 24} />
@@ -210,6 +213,7 @@ function TopBar() {
         Play
       </button>
       <GameHud />
+      <AlertsButton />
       {compact && <MoreMenu>{secondary}<ThemeToggle /></MoreMenu>}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
         <div data-tour="clock" className="flex flex-wrap items-center gap-x-3 gap-y-1.5">

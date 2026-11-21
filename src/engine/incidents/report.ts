@@ -48,6 +48,18 @@ export function reportMarkdown(g: GameView, info: ReportInfo): string {
   out.push(`| Mean time to contain (MTTC) | ${formatSpan(m.mttc)} |`);
   out.push(`| Mean time to resolve (MTTR) | ${formatSpan(m.mttr)} |`, "");
 
+  const st = g.soc.stats;
+  const owned = g.soc.controls.filter((c) => c.owned).map((c) => c.name);
+  if (st.caught + st.falseAlarms + st.missed + st.cleared > 0 || owned.length) {
+    out.push("## Alert triage", "");
+    out.push("| Measure | Value |", "|---|---|");
+    out.push(`| Real alerts escalated | ${st.caught} |`);
+    out.push(`| False alarms escalated | ${st.falseAlarms} |`);
+    out.push(`| Real alerts dismissed or missed | ${st.missed} |`);
+    out.push(`| False alarms cleared | ${st.cleared} |`);
+    out.push(`| Security tools running | ${owned.length ? owned.map(cell).join(", ") : "none"} |`, "");
+  }
+
   if (g.objectives.length) {
     out.push("## Objectives", "");
     for (const o of g.objectives) out.push(`- ${o.passed ? "✅" : "❌"} ${o.label}`);

@@ -508,6 +508,10 @@ export class Simulation {
         return { ...cmd, enabled: this.lifecycle.failuresEnabled };
       case "decoy.setDeployed":
         return { ...cmd, deployed: !this.incidents.isDormantDecoy(cmd.nodeId) };
+      case "control.set":
+        return { ...cmd, owned: this.incidents.soc.has(cmd.control) };
+      case "rule.setEnabled":
+        return { ...cmd, enabled: !this.incidents.soc.state.disabled.includes(cmd.ruleId) };
       case "firmware.install": {
         if (cmd.when !== "tonight") return null; // already running: roll back instead
         const prev = this.lifecycle.scheduledVersion(cmd.nodeId);
@@ -655,7 +659,10 @@ export class Simulation {
       case "game.stop":
       case "incident.start":
       case "incident.act":
-      case "decoy.setDeployed": {
+      case "decoy.setDeployed":
+      case "alert.triage":
+      case "control.set":
+      case "rule.setEnabled": {
         const res = this.incidents.apply(cmd, this.world());
         if (!res.ok || res.noop) return res;
         return { ok: true, noop: false, text: res.event.text, severity: res.event.severity, subject: res.event.subject ?? "" };

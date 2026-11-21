@@ -43,6 +43,9 @@ interface AppState {
   reportOpen: boolean;
   setPlayOpen: (open: boolean) => void;
   setIncidentsOpen: (open: boolean) => void;
+  /** Phase 13: the security operations panel (alert queue, rules, tools). Shares the right side with incidents. */
+  socOpen: boolean;
+  setSocOpen: (open: boolean) => void;
   setReportOpen: (open: boolean) => void;
   /** Colour devices on the map by their worst known vulnerability. */
   riskLens: boolean;
@@ -105,7 +108,9 @@ export const useApp = create<AppState>()((set, get) => ({
   incidentsOpen: false,
   reportOpen: false,
   setPlayOpen: (playOpen) => set({ playOpen }),
-  setIncidentsOpen: (incidentsOpen) => set({ incidentsOpen }),
+  setIncidentsOpen: (incidentsOpen) => set(incidentsOpen ? { incidentsOpen, socOpen: false } : { incidentsOpen }),
+  socOpen: false,
+  setSocOpen: (socOpen) => set(socOpen ? { socOpen, incidentsOpen: false, selectedId: null } : { socOpen }),
   setReportOpen: (reportOpen) => set({ reportOpen }),
   setVulnsOpen: (vulnsOpen) => set({ vulnsOpen }),
   setRiskLens: (riskLens) => set({ riskLens }),
@@ -131,7 +136,7 @@ export const useApp = create<AppState>()((set, get) => ({
     set({
       topology, graph: buildGraph(topology), topologyKey: get().topologyKey + 1,
       selectedId: null, hoveredId: null, wizardOpen: false, trace: null, policyOpen: null, vulnsOpen: false, playOpen: false,
-      incidentsOpen: false, reportOpen: false, savesOpen: false,
+      incidentsOpen: false, socOpen: false, reportOpen: false, savesOpen: false,
     }),
   setWizardOpen: (wizardOpen) => set({ wizardOpen }),
   startTrace: (source = null) => set({ trace: { source, target: null, service: null, result: null }, selectedId: null }),
